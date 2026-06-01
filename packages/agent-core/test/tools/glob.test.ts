@@ -224,6 +224,84 @@ describe('GlobTool', () => {
     expect(result.output).toBe('src/a.ts');
   });
 
+  it('treats a trailing slash on the pattern as "directories only"', async () => {
+    // Standard glob semantics: `src/constant/` matches the directory
+    // `src/constant` but not a same-named file. The kaos walker splits
+    // on `/` and would try to match an empty segment (regex `/^$/`)
+    // that never matches a real entry — the tool strips the slash and
+    // applies a directory-only filter so the match surfaces.
+    const glob = vi.fn().mockReturnValue(asyncPaths(['/workspace/src/constant']));
+    const tool = new GlobTool(
+      createFakeKaos({
+        glob,
+        stat: vi.fn().mockResolvedValue(stat(1, 0o040000)),
+      }),
+      workspace,
+    );
+
+    const result = await executeTool(tool, context({ pattern: 'src/constant/' }));
+
+    expect(result.isError).toBeFalsy();
+    expect(glob).toHaveBeenCalledWith('/workspace', 'src/constant');
+    expect(result.output).toBe('src/constant');
+  });
+
+  it('filters non-directory matches when the pattern ends with "/"', async () => {
+    // `src/tui/components/*/` should match only subdirectories under
+    // `src/tui/components`, never files. The kaos walker would yield
+    // both because it sees `*` as a single-segment wildcard, so the
+    // tool layer filters the file via the directories-only flag.
+    const glob = vi.fn().mockReturnValue(
+      asyncPaths([
+        '/workspace/src/tui/components/list',
+        '/workspace/src/tui/components/util.ts',
+      ]),
+    );
+    const tool = new GlobTool(
+      createFakeKaos({
+        glob,
+        stat: vi
+          .fn()
+          .mockResolvedValueOnce(stat(2, 0o040000))
+          .mockResolvedValueOnce(stat(1, 0o100000)),
+      }),
+      workspace,
+    );
+
+    const result = await executeTool(tool, context({ pattern: 'src/tui/components/*/' }));
+
+    expect(result.isError).toBeFalsy();
+    expect(glob).toHaveBeenCalledWith('/workspace', 'src/tui/components/*');
+    expect(result.output).toBe('src/tui/components/list');
+  });
+
+  it('applies the trailing-slash filter to every half of a brace expansion', async () => {
+    // `{src,test}/` expands to `src/` and `test/`. Both halves must
+    // carry the directories-only flag independently; a file named
+    // `src` or `test` at the search root must not surface.
+    const glob = vi.fn((_root: string, pattern: string) => {
+      if (pattern === 'src') return asyncPaths(['/workspace/src']);
+      if (pattern === 'test') return asyncPaths(['/workspace/test']);
+      return asyncPaths([]);
+    });
+    const tool = new GlobTool(
+      createFakeKaos({
+        glob,
+        stat: vi.fn().mockResolvedValue(stat(1, 0o040000)),
+      }),
+      workspace,
+    );
+
+    const result = await executeTool(tool, context({ pattern: '{src,test}/' }));
+
+    expect(result.isError).toBeFalsy();
+    expect(glob).toHaveBeenCalledWith('/workspace', 'src');
+    expect(glob).toHaveBeenCalledWith('/workspace', 'test');
+    const output = typeof result.output === 'string' ? result.output : '';
+    const lines = output.split('\n').sort();
+    expect(lines).toEqual(['src', 'test']);
+  });
+
   it('caps returned matches and surfaces the truncation header', async () => {
     const paths = Array.from({ length: MAX_MATCHES + 1 }, (_, i) => `/workspace/${String(i)}.ts`);
     const tool = new GlobTool(

@@ -15,6 +15,12 @@
  *     fan-out has to happen here for any results to come back. Cartesian
  *     and one level of nesting are supported; unbalanced or comma-less
  *     braces fall through as literals.
+ *   - A trailing `/` on a sub-pattern is the standard glob signal for
+ *     "match directories only". The kaos walker splits on `/` and would
+ *     try to match an empty segment (which never matches a real entry),
+ *     so the slash is stripped here and the surviving entries are then
+ *     filtered to directories. Applies after brace expansion so e.g.
+ *     `{src,test}/` works on both halves.
  *   - `path` is validated by `resolvePathAccess` in strict mode. Explicit
  *     paths must be absolute and within the workspace roots.
  *   - Match count is capped at `MAX_MATCHES` (unique paths). A separate
@@ -160,7 +166,27 @@ export class GlobTool implements BuiltinTool<GlobInput> {
     // would exceed MAX_BRACE_EXPANSIONS we also return the original so
     // the caller sees an obvious zero-match outcome rather than a silent
     // partial walk.
-    const subPatterns = expandBraces(args.pattern);
+    const expandedSubPatterns = expandBraces(args.pattern);
+
+    // Normalize trailing `/` per sub-pattern. The kaos walker splits the
+    // pattern on `/` and matches each segment against `readdir` entries,
+    // so a trailing slash produces an empty final segment whose regex
+    // (`/^$/`) never matches anything — `src/constant/` would silently
+    // return zero results despite `src/constant` being a real directory.
+    // Standard glob (bash, Node's glob with `mark`) treats trailing `/`
+    // as "directories only", so the slash is stripped and the matches
+    // are filtered post-stat. The flag rides with each sub-pattern so a
+    // brace-expanded set like `{src,test}/` works on both halves.
+    const subPatterns: Array<{ pattern: string; directoriesOnly: boolean }> =
+      expandedSubPatterns.map((p) => {
+        let pattern = p;
+        let directoriesOnly = false;
+        while (pattern.length > 1 && pattern.endsWith('/')) {
+          pattern = pattern.slice(0, -1);
+          directoriesOnly = true;
+        }
+        return { pattern, directoriesOnly };
+      });
 
     // Default true. When false, directories yielded by kaos are
     // filtered out using the same stat that fuels the mtime sort
@@ -225,7 +251,7 @@ export class GlobTool implements BuiltinTool<GlobInput> {
       const rootSet = new Set(searchRoots);
 
       outer: for (const root of searchRoots) {
-        for (const subPattern of subPatterns) {
+        for (const { pattern: subPattern, directoriesOnly } of subPatterns) {
           for await (const filePath of this.kaos.glob(root, subPattern)) {
             yielded++;
             if (yielded >= YIELD_SAFETY_CAP) {
@@ -248,10 +274,14 @@ export class GlobTool implements BuiltinTool<GlobInput> {
             } catch {
               // stat failure — use 0 mtime / assume file so it still surfaces
             }
-            // Apply include_dirs *after* marking seen so a filtered dir
-            // doesn't re-enter via a later duplicate yield, and *before*
-            // pushing to entries so MAX_MATCHES continues to cap output
-            // (not pre-filter) size.
+            // Apply directory-only first: a trailing `/` on the
+            // sub-pattern (`src/constant/`) means "directories only", so
+            // non-dir entries are filtered out regardless of include_dirs.
+            // Then apply include_dirs *after* marking seen so a filtered
+            // dir doesn't re-enter via a later duplicate yield, and
+            // *before* pushing to entries so MAX_MATCHES continues to
+            // cap output (not pre-filter) size.
+            if (directoriesOnly && !isDir) continue;
             if (!includeDirs && isDir) continue;
             entries.push({ path: filePath, mtime });
           }

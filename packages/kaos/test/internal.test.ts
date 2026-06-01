@@ -197,6 +197,20 @@ describe('globPatternToRegex additional cases', () => {
     expect(regex.test('special bracket.ts')).toBe(false);
   });
 
+  it('escapes backslash-prefixed * and ? so they match literally', () => {
+    // `\*` and `\?` must not leak into the regex as quantifiers,
+    // otherwise `new RegExp('^*\.ts$')` throws "Nothing to repeat".
+    const starRe = globPatternToRegex('star\\*file.ts', true);
+    expect(starRe.test('star*file.ts')).toBe(true);
+    expect(starRe.test('starfile.ts')).toBe(false);
+    expect(starRe.test('starxxfile.ts')).toBe(false);
+
+    const qRe = globPatternToRegex('q\\?file.ts', true);
+    expect(qRe.test('q?file.ts')).toBe(true);
+    expect(qRe.test('qfile.ts')).toBe(false);
+    expect(qRe.test('qxfile.ts')).toBe(false);
+  });
+
   it('escapes backslashes inside character classes to avoid an unterminated regex', () => {
     // A trailing backslash inside a glob char class (`[abc\\]`) would
     // escape the closing `]` in the resulting regex. We escape it so the
