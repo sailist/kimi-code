@@ -220,6 +220,9 @@ export class GlobTool implements BuiltinTool<GlobInput> {
       const YIELD_SAFETY_CAP = MAX_MATCHES * 2 * subPatterns.length;
       let yielded = 0;
       let truncated = false;
+      // `**` yields the search root itself as a zero-directory match.
+      // Filter it out up-front so callers never see a lone '.' entry.
+      const rootSet = new Set(searchRoots);
 
       outer: for (const root of searchRoots) {
         for (const subPattern of subPatterns) {
@@ -235,6 +238,7 @@ export class GlobTool implements BuiltinTool<GlobInput> {
               break outer;
             }
             seen.add(filePath);
+            if (rootSet.has(filePath)) continue;
             let mtime = 0;
             let isDir = false;
             try {

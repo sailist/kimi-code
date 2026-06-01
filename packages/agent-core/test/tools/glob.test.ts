@@ -117,6 +117,35 @@ describe('GlobTool', () => {
     expect(result.output).toContain(`[Truncated at ${String(MAX_MATCHES)} matches`);
   });
 
+  it('excludes the search root itself so ** does not surface a lone " ."', async () => {
+    // `_globWalk` treats a trailing `**` as matching zero directories,
+    // which yields the search root. The tool layer filters that out so
+    // the relative display never shows a meaningless '.' line.
+    const glob = vi
+      .fn()
+      .mockReturnValue(asyncPaths(['/workspace', '/workspace/src', '/workspace/src/a.ts']));
+    const tool = new GlobTool(
+      createFakeKaos({
+        glob,
+        stat: vi
+          .fn()
+          .mockResolvedValueOnce(stat(1, 0o040000))
+          .mockResolvedValueOnce(stat(2, 0o040000))
+          .mockResolvedValueOnce(stat(3, 0o100000)),
+      }),
+      workspace,
+    );
+
+    const result = await executeTool(tool, context({ pattern: '**' }));
+
+    expect(result.isError).toBeFalsy();
+    const output = typeof result.output === 'string' ? result.output : '';
+    const lines = output.split('\n');
+    expect(lines).not.toContain('.');
+    expect(lines).toContain('src');
+    expect(lines).toContain('src/a.ts');
+  });
+
   it('expands brace patterns into multiple sub-pattern walks and dedups paths', async () => {
     // `*.{ts,tsx}` → two kaos.glob calls with `*.ts` and `*.tsx`. Shared
     // hits are deduped so the same file does not appear twice.
