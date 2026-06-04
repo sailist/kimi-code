@@ -14,6 +14,7 @@ import {
   type ToolCallRequest,
   type ToolCallResponse,
 } from '@moonshot-ai/agent-core';
+import type { Kaos } from '@moonshot-ai/kaos';
 
 import type { ApprovalHandler, QuestionHandler } from '#/events';
 import type {
@@ -106,9 +107,25 @@ export abstract class SDKRpcClientBase {
     return rpc.createSession(coreInput);
   }
 
+  async createSessionWithKaos(
+    input: CreateSessionOptions,
+    kaos: Kaos,
+  ): Promise<SessionSummary> {
+    void kaos;
+    return this.createSession(input);
+  }
+
   async resumeSession(input: ResumeSessionInput): Promise<ResumedSessionSummary> {
     const rpc = await this.getRpc();
     return rpc.resumeSession({ ...input, sessionId: input.id });
+  }
+
+  async resumeSessionWithKaos(
+    input: ResumeSessionInput,
+    kaos: Kaos,
+  ): Promise<ResumedSessionSummary> {
+    void kaos;
+    return this.resumeSession(input);
   }
 
   async forkSession(input: ForkSessionInput): Promise<SessionSummary> {
