@@ -467,7 +467,12 @@ describe('Agent tool description', () => {
     const description = agentDescription();
 
     expect(description).toContain('Tools: Bash, Read, ReadMediaFile, Glob, Grep, WebSearch, FetchURL');
-    expect(description).toContain('Tools: Agent, AgentSwarm, Bash');
+    // v1 parity: the coder subagent carries the 10-tool coding set, with no
+    // nested-spawn / cron / task-management tools.
+    expect(description).toContain(
+      'Tools: Bash, Edit, FetchURL, Glob, Grep, Read, ReadMediaFile, WebSearch, Write, mcp__*',
+    );
+    expect(description).not.toContain('Tools: Agent, AgentSwarm');
   });
 
   it('mentions resume preference and result visibility', () => {
@@ -732,6 +737,22 @@ describe('Agent tool execution contract', () => {
         binding: expect.objectContaining({ profile: 'coder' }),
       }),
     );
+  });
+
+  it('rejects subagent types outside the caller profile declaration', async () => {
+    const lifecycle = createAgentLifecycleStub({ createAgentIds: ['agent-child'] });
+    const context = createAgentToolContext(lifecycle);
+
+    const result = await executeAgentTool(context, {
+      prompt: 'Investigate',
+      description: 'Find cause',
+      // The default profile itself is not a spawnable subagent type (v1 parity).
+      subagent_type: 'agent',
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.output).toContain('Subagent profile "agent" was not found');
+    expect(lifecycle.create).not.toHaveBeenCalled();
   });
 
   it('resumes a foreground subagent when resume is provided', async () => {

@@ -82,6 +82,14 @@ export interface AgentProfile {
   /** Tool names (and MCP glob patterns) the agent may use under this profile. */
   readonly tools: readonly string[];
   /**
+   * Subagent types this profile's collaboration tools (`Agent` / `AgentSwarm`)
+   * may spawn, keyed by target profile name with an optional description
+   * override (v1's `subagents` profile section). Profiles without a
+   * declaration fall back to the default profile's declaration — mirroring
+   * v1's `SessionSubagentHost.resolveProfile`.
+   */
+  readonly subagents?: Record<string, { readonly description?: string }>;
+  /**
    * Render the complete system prompt for this profile given the runtime
    * context. Self-contained — includes the base prompt and any role overlay.
    */
@@ -113,6 +121,20 @@ export interface IAgentProfileCatalogService {
   getDefault(): AgentProfile;
   /** Enumerate every registered profile. Stable order (insertion order). */
   list(): readonly AgentProfile[];
+  /**
+   * Resolve the subagent profile an agent may spawn (v1's `resolveProfile`):
+   * the caller profile's `subagents` declaration, falling back to the default
+   * profile's declaration. Returns `undefined` when `subagentName` is not an
+   * allowed subagent type for the caller.
+   */
+  getSubagent(callerProfileName: string | undefined, subagentName: string): AgentProfile | undefined;
+  /**
+   * The subagent profiles an agent may spawn, in declaration order — the set
+   * the `Agent` tool description advertises. A declared description overrides
+   * the target's own only when the target has none (v1's
+   * `applySubagentDescriptions`).
+   */
+  listSubagents(callerProfileName: string | undefined): readonly AgentProfile[];
 }
 
 export const IAgentProfileCatalogService: ServiceIdentifier<IAgentProfileCatalogService> =

@@ -861,6 +861,11 @@ describe('SessionSwarmService metadata compatibility', () => {
           : undefined,
       getDefault: () => ({ name: 'agent', tools: [], systemPrompt: () => '' }),
       list: () => [],
+      getSubagent: (_callerProfileName: string | undefined, subagentName: string) =>
+        subagentName === 'coder'
+          ? { name: 'coder', tools: [], systemPrompt: () => '' }
+          : undefined,
+      listSubagents: () => [{ name: 'coder', tools: [], systemPrompt: () => '' }],
     });
     ix.stub(
       ISessionContext,
@@ -1046,6 +1051,23 @@ describe('SessionSwarmService metadata compatibility', () => {
 
     expect(childUserTools.inheritUserTools).toHaveBeenCalledWith(parentUserTools);
     expect(childPermissionRules.inheritPermissionFrom).toHaveBeenCalledWith(parentPermissionRules);
+  });
+
+  it('rejects spawn profile names outside the caller declaration', async () => {
+    const service = ix.get(ISessionSwarmService);
+
+    await expect(
+      service.run({
+        callerAgentId: 'main',
+        tasks: [{ ...spawnSessionTask('src/a.ts'), profileName: 'agent' }],
+      }),
+    ).resolves.toMatchObject([
+      {
+        status: 'failed',
+        error: expect.stringContaining('Subagent profile "agent" was not found'),
+      },
+    ]);
+    expect(createAgent).not.toHaveBeenCalled();
   });
 
   it('keeps v1 resume ownership errors inside the per-subagent result', async () => {

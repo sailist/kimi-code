@@ -53,26 +53,14 @@ const AGENT_TOOLS = [
 ] as const;
 
 const CODER_TOOLS = [
-  'Agent',
-  'AgentSwarm',
   'Bash',
-  'CronCreate',
-  'CronDelete',
-  'CronList',
   'Edit',
-  'EnterPlanMode',
-  'ExitPlanMode',
+  'FetchURL',
   'Glob',
   'Grep',
   'Read',
   'ReadMediaFile',
-  'Skill',
-  'TaskList',
-  'TaskOutput',
-  'TaskStop',
-  'TodoList',
   'WebSearch',
-  'FetchURL',
   'Write',
   'mcp__*',
 ] as const;
@@ -105,6 +93,21 @@ registerAgentProfile({
   name: 'agent',
   description: 'Default Kimi Code agent',
   tools: AGENT_TOOLS,
+  // The spawnable subagent types (v1's `subagents` profile section): the
+  // `Agent` / `AgentSwarm` tools advertise and accept only these — every
+  // profile without its own declaration falls back to this set.
+  subagents: {
+    coder: {
+      description:
+        'General software engineering agent — the only subagent type with file-editing tools; use it for any delegated task that must modify code.',
+    },
+    explore: {
+      description: 'Fast codebase exploration with prompt-enforced read-only behavior.',
+    },
+    plan: {
+      description: 'Read-only implementation planning and architecture design.',
+    },
+  },
   systemPrompt: (context) => renderSystemPrompt('', context, AGENT_TOOLS),
 });
 

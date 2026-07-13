@@ -128,4 +128,37 @@ describe('AgentProfileService.bind', () => {
 
     expect(svc.data().profileName).toBe(DEFAULT_AGENT_PROFILE_NAME);
   });
+
+  describe('catalog subagent resolution', () => {
+    it('resolves the default profile declaration and rejects undeclared types', () => {
+      const { ctx: context } = buildContext();
+      const catalog = context.get(IAgentProfileCatalogService);
+
+      expect(catalog.getSubagent('agent', 'coder')?.name).toBe('coder');
+      expect(catalog.getSubagent('agent', 'explore')?.name).toBe('explore');
+      expect(catalog.getSubagent('agent', 'plan')?.name).toBe('plan');
+      // The default profile itself is not a spawnable subagent type (v1 parity).
+      expect(catalog.getSubagent('agent', 'agent')).toBeUndefined();
+      expect(catalog.getSubagent('agent', 'nope')).toBeUndefined();
+    });
+
+    it('falls back to the default declaration for profiles without their own', () => {
+      const { ctx: context } = buildContext();
+      const catalog = context.get(IAgentProfileCatalogService);
+
+      expect(catalog.getSubagent('coder', 'explore')?.name).toBe('explore');
+      expect(catalog.getSubagent(undefined, 'coder')?.name).toBe('coder');
+    });
+
+    it('lists the declared subagent types in declaration order', () => {
+      const { ctx: context } = buildContext();
+      const catalog = context.get(IAgentProfileCatalogService);
+
+      expect(catalog.listSubagents('agent').map((p) => p.name)).toEqual([
+        'coder',
+        'explore',
+        'plan',
+      ]);
+    });
+  });
 });

@@ -133,11 +133,13 @@ export class SessionSwarmService implements ISessionSwarmService {
   ): Promise<AgentRunAttemptHandle> {
     options.signal.throwIfAborted();
     const caller = this.requireHandle(callerAgentId, 'Caller agent');
-    const profile = this.catalog.get(options.profileName);
-    if (profile === undefined) {
-      throw new Error(`Unknown agent type: "${options.profileName}"`);
-    }
     const callerData = caller.accessor.get(IAgentProfileService).data();
+    // v1 parity: the caller may spawn only the subagent types its profile
+    // declares (falling back to the default profile's declaration).
+    const profile = this.catalog.getSubagent(callerData.profileName, options.profileName);
+    if (profile === undefined) {
+      throw new Error(`Subagent profile "${options.profileName}" was not found`);
+    }
     if (callerData.modelAlias === undefined) {
       throw new Error('Caller agent has no model bound');
     }

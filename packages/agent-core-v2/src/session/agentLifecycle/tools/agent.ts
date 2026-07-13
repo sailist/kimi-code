@@ -164,7 +164,12 @@ export class AgentTool implements BuiltinTool<AgentToolInput> {
       ? AGENT_BACKGROUND_DESCRIPTION
       : AGENT_BACKGROUND_DISABLED_DESCRIPTION;
     const baseDescription = `${AGENT_DESCRIPTION_BASE}\n\n${backgroundDescription}`;
-    const typeLines = buildProfileDescriptions(this.catalog.list());
+    // Advertise only the subagent types this agent's profile may spawn
+    // (v1: the parent profile's `subagents` declaration), not the whole
+    // catalog — the same set `launch` enforces.
+    const typeLines = buildProfileDescriptions(
+      this.catalog.listSubagents(this.profile.data().profileName),
+    );
     return typeLines
       ? `${baseDescription}\n\nAvailable agent types (pass via subagent_type):\n${typeLines}`
       : baseDescription;
@@ -245,9 +250,14 @@ export class AgentTool implements BuiltinTool<AgentToolInput> {
       const requestedProfileName = args.subagent_type?.length
         ? args.subagent_type
         : DEFAULT_PROFILE_NAME;
-      const profile = this.catalog.get(requestedProfileName);
+      // v1 parity: the caller may spawn only the subagent types its profile
+      // declares (falling back to the default profile's declaration).
+      const profile = this.catalog.getSubagent(
+        this.profile.data().profileName,
+        requestedProfileName,
+      );
       if (profile === undefined) {
-        throw new Error(`Unknown agent type: "${requestedProfileName}"`);
+        throw new Error(`Subagent profile "${requestedProfileName}" was not found`);
       }
       const own = this.profile.data();
       if (own.modelAlias === undefined) {

@@ -46,6 +46,53 @@ export class AgentProfileCatalogService implements IAgentProfileCatalogService {
   list(): readonly AgentProfile[] {
     return this.ordered;
   }
+
+  getSubagent(
+    callerProfileName: string | undefined,
+    subagentName: string,
+  ): AgentProfile | undefined {
+    const declaration = this.subagentDeclaration(callerProfileName);
+    if (declaration === undefined || !(subagentName in declaration)) return undefined;
+    const target = this.byName.get(subagentName);
+    if (target === undefined) return undefined;
+    return applySubagentDescription(target, declaration[subagentName]?.description);
+  }
+
+  listSubagents(callerProfileName: string | undefined): readonly AgentProfile[] {
+    const declaration = this.subagentDeclaration(callerProfileName);
+    if (declaration === undefined) return [];
+    const out: AgentProfile[] = [];
+    for (const [name, subagent] of Object.entries(declaration)) {
+      const target = this.byName.get(name);
+      if (target !== undefined) {
+        out.push(applySubagentDescription(target, subagent.description));
+      }
+    }
+    return out;
+  }
+
+  /** v1's fallback: a profile without its own `subagents` declaration may
+   *  spawn the default profile's declared subagent types. */
+  private subagentDeclaration(
+    callerProfileName: string | undefined,
+  ): AgentProfile['subagents'] {
+    return (
+      (callerProfileName === undefined
+        ? undefined
+        : this.byName.get(callerProfileName)?.subagents) ??
+      this.byName.get(DEFAULT_AGENT_PROFILE_NAME)?.subagents
+    );
+  }
+}
+
+/** v1's `applySubagentDescriptions`: the declaration's description overrides
+ *  the target profile's own only when the target has none. */
+function applySubagentDescription(
+  target: AgentProfile,
+  description: string | undefined,
+): AgentProfile {
+  if (description === undefined || target.description !== undefined) return target;
+  return { ...target, description };
 }
 
 registerScopedService(
