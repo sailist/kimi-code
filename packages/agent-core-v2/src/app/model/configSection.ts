@@ -81,4 +81,5 @@ registerConfigSection(MODELS_SECTION, ModelsSectionSchema, {
   defaultValue: {},
   fromToml: modelsFromToml,
   toToml: modelsToToml,
+  salvage: 'entry',
 });

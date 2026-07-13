@@ -227,6 +227,18 @@ export async function startServer(opts: ServerStartOptions = {}): Promise<Runnin
     ...(opts.seeds ?? []),
   ]);
 
+  // Fail fast on an unusable config.toml (v1 parity): the config service
+  // rejects its `ready` promise when the file cannot be parsed at startup —
+  // better to crash with an actionable error than to start looking logged
+  // out (and to let the first settings write destroy the file).
+  try {
+    await core.accessor.get(IConfigService).ready;
+  } catch (error) {
+    await registration?.release();
+    lockHandle?.release();
+    throw error;
+  }
+
   const logger = opts.logger ?? createServerLogger({ level: opts.logLevel ?? 'info' });
   if (exposureClass !== 'loopback') {
     logger.warn(

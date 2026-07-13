@@ -20,6 +20,7 @@ import { Disposable } from '#/_base/di/lifecycle';
 import { LifecycleScope, registerScopedService } from '#/_base/di/scope';
 import { Emitter, type Event } from '#/_base/event';
 import { IBootstrapService } from '#/app/bootstrap/bootstrap';
+import { ErrorCodes, Error2 } from '#/errors';
 import { ILogService } from '#/_base/log/log';
 import {
   IAtomicTomlDocumentStore,
@@ -115,6 +116,40 @@ function applySectionEnv(base: unknown, env: AnyEnvBindings, getEnv: GetEnv): un
   return target;
 }
 
+/**
+ * Salvage an entry-keyed section value: repeatedly drop the entries the
+ * schema complains about and re-validate, so one broken entry (e.g. a single
+ * malformed provider) never takes down the valid ones (v1's
+ * `salvageConfigData` loop). Returns `undefined` when nothing can be dropped
+ * but the value still fails — the caller then drops the whole section.
+ */
+function salvageEntrySection(
+  schema: ConfigSchema<unknown>,
+  value: Record<string, unknown>,
+): { readonly value: unknown; readonly dropped: readonly string[] } | undefined {
+  const working: Record<string, unknown> = { ...value };
+  const dropped: string[] = [];
+  for (;;) {
+    try {
+      return { value: schema.parse(working), dropped };
+    } catch (error) {
+      const issues = (error as { issues?: readonly { path: readonly unknown[] }[] }).issues;
+      let deletedAny = false;
+      if (Array.isArray(issues)) {
+        for (const issue of issues) {
+          const entry = issue.path[0];
+          if (typeof entry === 'string' && entry in working) {
+            delete working[entry];
+            dropped.push(entry);
+            deletedAny = true;
+          }
+        }
+      }
+      if (!deletedAny) return undefined;
+    }
+  }
+}
+
 function isSameSection(
   existing: ConfigSection,
   schema: ConfigSchema<unknown>,
@@ -128,6 +163,7 @@ function isSameSection(
     existing.stripEnv === (options.stripEnv as ConfigSection['stripEnv']) &&
     existing.fromToml === options.fromToml &&
     existing.toToml === options.toToml &&
+    existing.salvage === options.salvage &&
     deepEqual(existing.defaultValue, options.defaultValue)
   );
 }
@@ -192,6 +228,7 @@ export class ConfigRegistry implements IConfigRegistry {
       stripEnv: options.stripEnv as ConfigSection['stripEnv'],
       fromToml: options.fromToml,
       toToml: options.toToml,
+      salvage: options.salvage,
     });
     this._onDidRegisterSection.fire({ domain });
   }
@@ -351,6 +388,10 @@ export class ConfigService extends Disposable implements IConfigService {
       return;
     }
     await this.enqueueStateTransition(async () => {
+      // Refuse to write while the on-disk file is unparseable (v1's
+      // `readConfigFileForUpdate`): persisting now would replace the user's
+      // broken-but-fixable file with our in-memory base.
+      await this.assertOnDiskConfigUsable();
       const base = this.raw[domain];
       const next = this.registry.merge(domain, base, patch);
       const validated = this.registry.validate(domain, next);
@@ -381,6 +422,8 @@ export class ConfigService extends Disposable implements IConfigService {
       return;
     }
     await this.enqueueStateTransition(async () => {
+      // Same guard as `set` — see `assertOnDiskConfigUsable`.
+      await this.assertOnDiskConfigUsable();
       const stripped = this.stripEnv(domain, value);
       if (stripped === undefined) {
         delete this.raw[domain];
@@ -440,14 +483,43 @@ export class ConfigService extends Disposable implements IConfigService {
           : describeUnknownError(error);
       this.diagnosticsList.push({ severity: 'error', message });
       this.log.warn('config load failed', { error: describeUnknownError(error) });
+      if (source === 'load') {
+        // v1 parity: a file that cannot be used at all (TOML syntax error,
+        // unreadable) fails startup — defaults-only would start the app
+        // looking logged out, which is worse than an actionable parse error.
+        throw new Error2(ErrorCodes.CONFIG_INVALID, message, { cause: error });
+      }
+      // Mid-run reload: keep the last good state (v1 parity). Adopting an
+      // empty base would zero every section — and the next `set()` would then
+      // persist that empty base, destroying the on-disk file.
+      return;
     }
     const nextRawSnake = cloneRecord(fileData);
     if (source !== 'load' && JSON.stringify(nextRawSnake) === JSON.stringify(this.rawSnake)) {
       return;
     }
+    const nextRaw = transformTomlData(fileData, this.registry);
+    const fileWarnings: string[] = [];
+    const nextEffective = this.buildEffective(nextRaw, fileWarnings);
+    this.applyEnvOverlay(nextEffective);
+    if (source !== 'load' && fileWarnings.length > 0) {
+      // v1 parity: keep the last good config on any file warning — adopting a
+      // salvaged config mid-run could silently drop providers or models a
+      // live session depends on.
+      this.diagnosticsList.push({
+        severity: 'warning',
+        message: 'config.toml has errors; keeping the previously loaded configuration.',
+      });
+      this.log.warn('config reload degraded; keeping previous config', { fileWarnings });
+      return;
+    }
+    const previous = this.effective;
     this.rawSnake = nextRawSnake;
-    this.raw = transformTomlData(fileData, this.registry);
-    this.rebuildEffective(source);
+    this.raw = nextRaw;
+    this.effective = nextEffective;
+    this.commit(source, [
+      ...new Set([...Object.keys(previous), ...Object.keys(nextEffective)]),
+    ]);
   }
 
   private rebuildEffective(
@@ -483,12 +555,30 @@ export class ConfigService extends Disposable implements IConfigService {
     }
   }
 
-  private buildEffective(raw: ResolvedConfig): ResolvedConfig {
+  private buildEffective(raw: ResolvedConfig, fileWarnings?: string[]): ResolvedConfig {
     const effective: ResolvedConfig = {};
     for (const [domain, value] of Object.entries(raw)) {
       try {
         effective[domain] = this.registry.validate(domain, value);
+        continue;
       } catch (error) {
+        const section = this.registry.getSection(domain);
+        // Entry-keyed sections (providers/models/platforms) drop only their
+        // invalid entries instead of the whole section (v1 parity).
+        if (section?.salvage === 'entry' && section.schema !== undefined && isPlainObject(value)) {
+          const salvaged = salvageEntrySection(section.schema, value);
+          if (salvaged !== undefined) {
+            effective[domain] = salvaged.value;
+            fileWarnings?.push(domain);
+            this.diagnosticsList.push({
+              domain,
+              severity: 'warning',
+              message: `Ignored invalid entries in config section '${domain}': ${salvaged.dropped.join(', ')}`,
+            });
+            continue;
+          }
+        }
+        fileWarnings?.push(domain);
         this.diagnosticsList.push({
           domain,
           severity: 'warning',
@@ -584,6 +674,26 @@ export class ConfigService extends Disposable implements IConfigService {
       }
     }
     this.commit('reload', [domain]);
+  }
+
+  /**
+   * Strict pre-write check (v1's `readConfigFileForUpdate`): re-read the
+   * on-disk document and reject the write when it cannot be parsed. The
+   * in-memory `rawSnake` always reflects the last *good* file (reloads keep
+   * it on errors), so persisting over a broken file would silently replace
+   * the user's broken-but-fixable content — the write must fail loudly
+   * instead.
+   */
+  private async assertOnDiskConfigUsable(): Promise<void> {
+    try {
+      await this.documentStore.get(CONFIG_SCOPE, this.configKey);
+    } catch (error) {
+      throw new Error2(
+        ErrorCodes.CONFIG_INVALID,
+        `Cannot change settings while ${this.bootstrap.configPath} is invalid — fix it first.`,
+        { cause: error },
+      );
+    }
   }
 
   private async persist(domain: string): Promise<void> {

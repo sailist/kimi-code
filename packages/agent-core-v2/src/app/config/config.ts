@@ -51,6 +51,14 @@ export interface ConfigSection<T = unknown> {
   readonly stripEnv?: ConfigStripEnv<T>;
   readonly fromToml?: ConfigFromToml;
   readonly toToml?: ConfigToToml;
+  /**
+   * Salvage strategy when the section fails validation. `'entry'` marks an
+   * entry-keyed section (a record keyed by user-chosen names, e.g.
+   * `providers` / `models`): drop only the invalid entries and keep the
+   * valid ones, instead of dropping the whole section (v1's
+   * `ENTRY_KEYED_SECTIONS` behavior).
+   */
+  readonly salvage?: 'entry';
 }
 
 export interface RegisterSectionOptions<T> {
@@ -61,6 +69,7 @@ export interface RegisterSectionOptions<T> {
   readonly stripEnv?: ConfigStripEnv<T>;
   readonly fromToml?: ConfigFromToml;
   readonly toToml?: ConfigToToml;
+  readonly salvage?: 'entry';
 }
 
 export interface ConfigEffectiveOverlay {

@@ -103,4 +103,5 @@ registerConfigSection(PLATFORMS_SECTION, PlatformsSectionSchema, {
   defaultValue: {},
   fromToml: platformsFromToml,
   toToml: platformsToToml,
+  salvage: 'entry',
 });

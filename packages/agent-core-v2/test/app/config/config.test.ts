@@ -31,6 +31,9 @@ import { DEFAULT_PERMISSION_MODE_SECTION } from '#/agent/permissionMode/configSe
 import '#/agent/media/configSection';
 import { IMAGE_SECTION, type ImageConfig } from '#/agent/media/configSection';
 import { ILogService } from '#/_base/log/log';
+import { ErrorCodes, Error2, isError2 } from '#/errors';
+// Side-effect: registers the `providers` section (entry-keyed, salvage-tested).
+import '#/app/provider/configSection';
 import { InMemoryStorageService } from '#/persistence/backends/memory/inMemoryStorageService';
 import { IFileSystemStorageService } from '#/persistence/interface/storage';
 import { IAtomicTomlDocumentStore } from '#/persistence/interface/atomicDocumentStore';
@@ -444,3 +447,124 @@ function toolNames(value: unknown): string[] {
     })
     .filter((name): name is string => name !== null);
 }
+
+describe('ConfigService file-error defenses', () => {
+  const GOOD_TOML = [
+    '[providers.good]',
+    'api_key = "sk-good"',
+    'base_url = "https://example.com"',
+    '',
+  ].join('\n');
+  const BROKEN_TOML = 'this is [not valid toml';
+
+  const textEncoder = new TextEncoder();
+  const textDecoder = new TextDecoder();
+
+  function setup(): {
+    disposables: DisposableStore;
+    ix: TestInstantiationService;
+    storage: InMemoryStorageService;
+  } {
+    const disposables = new DisposableStore();
+    const ix = disposables.add(new TestInstantiationService());
+    ix.stub(ILogService, stubLog());
+    ix.stub(IBootstrapService, stubBootstrap('/tmp/kimi-cfg', {}));
+    const storage = new InMemoryStorageService();
+    ix.stub(IFileSystemStorageService, storage);
+    ix.set(IAtomicTomlDocumentStore, new SyncDescriptor(TomlAtomicDocumentStore));
+    ix.set(IConfigRegistry, new SyncDescriptor(ConfigRegistry));
+    ix.set(IConfigService, new SyncDescriptor(ConfigService));
+    return { disposables, ix, storage };
+  }
+
+  function seedToml(storage: InMemoryStorageService, toml: string): Promise<void> {
+    return storage.write('', 'config.toml', textEncoder.encode(toml));
+  }
+
+  async function readToml(storage: InMemoryStorageService): Promise<string> {
+    const bytes = await storage.read('', 'config.toml');
+    return bytes === undefined ? '' : textDecoder.decode(bytes);
+  }
+
+  it('fails startup when the config file cannot be parsed (v1 fail-fast)', async () => {
+    const { disposables, ix, storage } = setup();
+    await seedToml(storage, BROKEN_TOML);
+    const config = ix.get(IConfigService);
+
+    const error: unknown = await config.ready.catch((e: unknown) => e);
+
+    expect(isError2(error)).toBe(true);
+    expect((error as Error2).code).toBe(ErrorCodes.CONFIG_INVALID);
+    disposables.dispose();
+  });
+
+  it('keeps the last good config when a reload hits an unparseable file', async () => {
+    const { disposables, ix, storage } = setup();
+    await seedToml(storage, GOOD_TOML);
+    const config = ix.get(IConfigService);
+    await config.ready;
+    expect(Object.keys(config.get<Record<string, unknown>>('providers'))).toEqual(['good']);
+
+    await seedToml(storage, BROKEN_TOML);
+    await config.reload();
+
+    expect(Object.keys(config.get<Record<string, unknown>>('providers'))).toEqual(['good']);
+    expect(config.diagnostics().some((d) => d.severity === 'error')).toBe(true);
+    disposables.dispose();
+  });
+
+  it('rejects settings writes while the on-disk file is invalid', async () => {
+    const { disposables, ix, storage } = setup();
+    await seedToml(storage, GOOD_TOML);
+    const config = ix.get(IConfigService);
+    await config.ready;
+
+    // The file breaks without a reload in between — the guard re-reads the
+    // file at write time, so the race cannot clobber it either.
+    await seedToml(storage, BROKEN_TOML);
+
+    await expect(config.set('providers', { another: { apiKey: 'sk-x' } })).rejects.toThrow(
+      /fix it first/,
+    );
+    expect(await readToml(storage)).toBe(BROKEN_TOML);
+    disposables.dispose();
+  });
+
+  it('salvages entry-keyed sections per entry instead of dropping the whole section', async () => {
+    const { disposables, ix, storage } = setup();
+    await seedToml(
+      storage,
+      ['[providers.good]', 'api_key = "sk-good"', '', '[providers.bad]', 'api_key = 123', ''].join(
+        '\n',
+      ),
+    );
+    const config = ix.get(IConfigService);
+    await config.ready;
+
+    expect(Object.keys(config.get<Record<string, unknown>>('providers'))).toEqual(['good']);
+    expect(
+      config.diagnostics().some((d) => d.message.includes("Invalid entries") || d.message.includes("entries")),
+    ).toBe(true);
+    disposables.dispose();
+  });
+
+  it('keeps the previous config when a reload would adopt a salvaged one', async () => {
+    const { disposables, ix, storage } = setup();
+    await seedToml(storage, GOOD_TOML);
+    const config = ix.get(IConfigService);
+    await config.ready;
+
+    // Salvage-adopting this file would drop 'bad' and yield providers = {};
+    // keeping the previous config preserves 'good' (v1 parity).
+    await seedToml(storage, ['[providers.bad]', 'api_key = 123', ''].join('\n'));
+    await config.reload();
+
+    expect(Object.keys(config.get<Record<string, unknown>>('providers'))).toEqual(['good']);
+    expect(
+      config
+        .diagnostics()
+        .some((d) => d.message.includes('keeping the previously loaded configuration')),
+    ).toBe(true);
+    disposables.dispose();
+  });
+});

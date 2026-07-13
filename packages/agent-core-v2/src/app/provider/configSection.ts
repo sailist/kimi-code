@@ -105,4 +105,5 @@ registerConfigSection(PROVIDERS_SECTION, ProvidersSectionSchema, {
   stripEnv: stripProvidersEnv,
   fromToml: providersFromToml,
   toToml: providersToToml,
+  salvage: 'entry',
 });
