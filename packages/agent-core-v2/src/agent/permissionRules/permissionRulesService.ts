@@ -20,6 +20,7 @@ import {
 } from './permissionRules';
 import {
   addPermissionRules,
+  inheritPermission,
   PermissionRulesModel,
   recordApprovalResult as recordApprovalResultOp,
 } from './permissionRulesOps';
@@ -40,6 +41,16 @@ export class AgentPermissionRulesService implements IAgentPermissionRulesService
   addRules(rules: readonly PermissionRule[]): void {
     if (rules.length === 0) return;
     this.wire.dispatch(addPermissionRules({ rules: [...rules] }));
+  }
+
+  inheritPermissionFrom(source: IAgentPermissionRulesService): void {
+    if (source.rules.length === 0 && source.sessionApprovalRulePatterns.length === 0) return;
+    this.wire.dispatch(
+      inheritPermission({
+        rules: [...source.rules],
+        sessionApprovalRulePatterns: [...source.sessionApprovalRulePatterns],
+      }),
+    );
   }
 
   recordApprovalResult(record: PermissionApprovalResultRecord): void {

@@ -1942,6 +1942,9 @@ function createPermissionRulesStub(
     addRules: (nextRules) => {
       rules = [...rules, ...nextRules];
     },
+    inheritPermissionFrom: (source) => {
+      rules = [...rules, ...source.rules];
+    },
     recordApprovalResult: () => { },
   };
 }

@@ -10,6 +10,7 @@ import { IHostEnvironment } from '#/os/interface/hostEnvironment';
 import { IHostFileSystem, type HostFileStat } from '#/os/interface/hostFileSystem';
 import { IAgentContextSizeService } from '#/agent/contextSize/contextSize';
 import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMode';
+import { IAgentPermissionRulesService } from '#/agent/permissionRules/permissionRules';
 import { IAgentProfileService } from '#/agent/profile/profile';
 import { IAgentSystemReminderService } from '#/agent/systemReminder/systemReminder';
 import { IAgentWireRecordService } from '#/agent/wireRecord/wireRecord';
@@ -31,6 +32,8 @@ describe('SessionInitService', () => {
   let flush: ReturnType<typeof vi.fn>;
   let create: ReturnType<typeof vi.fn>;
   let run: ReturnType<typeof vi.fn>;
+  let childInheritPermissionFrom: ReturnType<typeof vi.fn>;
+  let mainPermissionRules: IAgentPermissionRulesService;
   let runCompletion: Promise<{ summary: string; usage?: undefined }>;
 
   beforeEach(() => {
@@ -65,6 +68,19 @@ describe('SessionInitService', () => {
       data: () => ({ modelAlias: 'mock-model', thinkingLevel: 'off', cwd: WORK_DIR }),
     };
     const permissionMode = { mode: 'auto' };
+    childInheritPermissionFrom = vi.fn();
+    mainPermissionRules = {
+      _serviceBrand: undefined,
+      rules: [],
+      sessionApprovalRulePatterns: [],
+      addRules: () => {},
+      inheritPermissionFrom: () => {},
+      recordApprovalResult: () => {},
+    } as unknown as IAgentPermissionRulesService;
+    const childPermissionRules = {
+      ...mainPermissionRules,
+      inheritPermissionFrom: childInheritPermissionFrom,
+    } as unknown as IAgentPermissionRulesService;
 
     handles['main'] = {
       id: 'main',
@@ -73,6 +89,7 @@ describe('SessionInitService', () => {
           if (id === IAgentLifecycleService) return lifecycle;
           if (id === IAgentProfileService) return profile;
           if (id === IAgentPermissionModeService) return permissionMode;
+          if (id === IAgentPermissionRulesService) return mainPermissionRules;
           if (id === IAgentSystemReminderService) return { appendSystemReminder };
           if (id === IAgentWireRecordService) return { flush };
           if (id === IEventBus) return eventBus;
@@ -86,6 +103,7 @@ describe('SessionInitService', () => {
       accessor: {
         get: (id: unknown) => {
           if (id === IAgentContextSizeService) return undefined;
+          if (id === IAgentPermissionRulesService) return childPermissionRules;
           return undefined;
         },
       },
@@ -127,6 +145,7 @@ describe('SessionInitService', () => {
       binding: { profile: 'coder', model: 'mock-model', thinking: 'off', cwd: WORK_DIR },
       permissionMode: 'auto',
     });
+    expect(childInheritPermissionFrom).toHaveBeenCalledWith(mainPermissionRules);
 
     expect(run).toHaveBeenCalledTimes(1);
     const runArgs = run.mock.calls[0]!;

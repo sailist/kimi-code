@@ -59,6 +59,7 @@ import { IAgentBuiltinToolsRegistrar } from '#/agent/toolRegistry/builtinToolsRe
 import { IAgentMediaToolsRegistrar } from '#/agent/media/mediaTools';
 import { IImageConfigBridge } from '#/agent/media/imageConfigBridge';
 import { IPermissionRulesConfigBridge } from '#/agent/permissionRules/permissionRulesConfigBridge';
+import { IAgentPermissionRulesService } from '#/agent/permissionRules/permissionRules';
 import {
   AGENT_WIRE_PROTOCOL_VERSION,
   IAgentWireRecordService,
@@ -426,6 +427,12 @@ export class AgentLifecycleService extends Disposable implements IAgentLifecycle
     const source = this.handles.get(sourceAgentId);
     if (source === undefined) throw new Error(`Source agent "${sourceAgentId}" does not exist`);
     const child = await this.create({ agentId: opts?.agentId, forkedFrom: source.id });
+
+    // Inherit the source's rules and session-approval memory (v1's `parent`
+    // chain) so a fork keeps the approvals already granted to its source.
+    child.accessor
+      .get(IAgentPermissionRulesService)
+      .inheritPermissionFrom(source.accessor.get(IAgentPermissionRulesService));
 
     const sourceData = source.accessor.get(IAgentProfileService).data();
     const childProfile = child.accessor.get(IAgentProfileService);

@@ -26,6 +26,7 @@ import { IHostFileSystem } from '#/os/interface/hostFileSystem';
 import { IAgentProfileService } from '#/agent/profile/profile';
 import { loadAgentsMd } from '#/agent/profile/context';
 import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMode';
+import { IAgentPermissionRulesService } from '#/agent/permissionRules/permissionRules';
 import { IAgentSystemReminderService } from '#/agent/systemReminder/systemReminder';
 import { IAgentWireRecordService } from '#/agent/wireRecord/wireRecord';
 import { ErrorCodes, Error2 } from '#/errors';
@@ -73,6 +74,12 @@ export class SessionInitService implements ISessionInitService {
         },
         permissionMode,
       });
+
+      // Inherit the main agent's rules and session-approval memory (v1's
+      // `parent` chain) so approvals already granted are not re-asked.
+      child.accessor
+        .get(IAgentPermissionRulesService)
+        .inheritPermissionFrom(main.accessor.get(IAgentPermissionRulesService));
 
       emitAgentRunSpawned(main, child.id, {
         profileName: INIT_PROFILE_NAME,

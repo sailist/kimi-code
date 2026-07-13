@@ -180,3 +180,45 @@ describe('PermissionRulesConfigBridge', () => {
     expect(svc.rules).toEqual([]);
   });
 });
+
+describe('AgentPermissionRulesService.inheritPermissionFrom', () => {
+  function sourceService(
+    rules: readonly PermissionRule[],
+    patterns: readonly string[],
+  ): IAgentPermissionRulesService {
+    return {
+      _serviceBrand: undefined,
+      rules,
+      sessionApprovalRulePatterns: patterns,
+      addRules: () => {},
+      inheritPermissionFrom: () => {},
+      recordApprovalResult: () => {},
+    };
+  }
+
+  it('copies rules and session-approval patterns from the source, deduped', () => {
+    svc.addRules([allowRule]);
+    svc.recordApprovalResult(sessionApproval('Bash(npm test)'));
+
+    svc.inheritPermissionFrom(
+      sourceService([allowRule, denyRule], ['Bash(npm test)', 'Read(**)']),
+    );
+
+    // `allowRule` and 'Bash(npm test)' were already present: no duplicates.
+    expect(svc.rules).toEqual([allowRule, denyRule]);
+    expect(svc.sessionApprovalRulePatterns).toEqual(['Bash(npm test)', 'Read(**)']);
+  });
+
+  it('is a no-op when the source has nothing to inherit', () => {
+    svc.inheritPermissionFrom(sourceService([], []));
+
+    expect(svc.rules).toEqual([]);
+    expect(svc.sessionApprovalRulePatterns).toEqual([]);
+  });
+
+  it('does not persist inherited rules or patterns (live-only)', async () => {
+    svc.inheritPermissionFrom(sourceService([denyRule], ['Read(**)']));
+
+    expect(await readRecords()).toEqual([]);
+  });
+});

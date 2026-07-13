@@ -37,6 +37,14 @@ export interface IAgentPermissionRulesService {
   readonly rules: readonly PermissionRule[];
   readonly sessionApprovalRulePatterns: readonly string[];
   addRules(rules: readonly PermissionRule[]): void;
+  /**
+   * Copy the source agent's current rules and session-approval patterns into
+   * this agent (deduped). Used at sub-agent / fork creation so children
+   * inherit the parent's user-approved memory, mirroring v1's `parent` chain
+   * as an explicit snapshot — the same idiom as the inherited permission mode
+   * and user tools.
+   */
+  inheritPermissionFrom(source: IAgentPermissionRulesService): void;
   recordApprovalResult(record: PermissionApprovalResultRecord): void;
 }
 

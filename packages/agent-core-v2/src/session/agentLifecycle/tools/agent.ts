@@ -25,6 +25,7 @@ import {
 } from '#/agent/task/task';
 import { IAgentProfileService } from '#/agent/profile/profile';
 import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMode';
+import { IAgentPermissionRulesService } from '#/agent/permissionRules/permissionRules';
 import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
 import { IAgentLoopService } from '#/agent/loop/loop';
 import { IAgentUserToolService } from '#/agent/userTool/userTool';
@@ -268,6 +269,11 @@ export class AgentTool implements BuiltinTool<AgentToolInput> {
       created.accessor
         .get(IAgentUserToolService)
         .inheritUserTools(requester.accessor.get(IAgentUserToolService));
+      // Inherit the caller's rules and session-approval memory (v1's `parent`
+      // chain) so approvals already granted to the caller are not re-asked.
+      created.accessor
+        .get(IAgentPermissionRulesService)
+        .inheritPermissionFrom(requester.accessor.get(IAgentPermissionRulesService));
       agentId = created.id;
       profileName = profile.name;
       promptText = await applyProfilePromptPrefix(profile, args.prompt, {

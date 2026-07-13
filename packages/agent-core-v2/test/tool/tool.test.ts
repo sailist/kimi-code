@@ -22,6 +22,7 @@ import { ToolAccesses, type ExecutableTool } from '#/tool/toolContract';
 import { IAgentToolRegistryService } from '#/agent/toolRegistry/toolRegistry';
 import { IAgentLoopService } from '#/agent/loop/loop';
 import { IAgentUserToolService, type UserToolRegistration } from '#/agent/userTool/userTool';
+import { IAgentPermissionRulesService } from '#/agent/permissionRules/permissionRules';
 import {
   AgentSwarmToolInputSchema,
   type AgentSwarmToolInput,
@@ -214,6 +215,16 @@ function createAgentLifecycleStub(options: AgentLifecycleStubOptions = {}): Agen
             inheritUserTools: () => {},
             register: () => {},
             unregister: () => {},
+          } as never;
+        }
+        if (serviceId === IAgentPermissionRulesService) {
+          return {
+            _serviceBrand: undefined,
+            rules: [],
+            sessionApprovalRulePatterns: [],
+            addRules: () => {},
+            inheritPermissionFrom: () => {},
+            recordApprovalResult: () => {},
           } as never;
         }
         if (serviceId === IAgentWireService) {
@@ -650,7 +661,7 @@ describe('Agent tool execution contract', () => {
     });
   });
 
-  it('inherits parent user tools when spawning a subagent', async () => {
+  it('inherits parent user tools and permission memory when spawning a subagent', async () => {
     const lookupTool: UserToolRegistration = {
       name: 'Lookup',
       description: 'Look up a short test value.',
@@ -670,11 +681,29 @@ describe('Agent tool execution contract', () => {
       register: vi.fn(),
       unregister: vi.fn(),
     } as unknown as IAgentUserToolService;
+    const parentPermissionRules = {
+      _serviceBrand: undefined,
+      rules: [],
+      sessionApprovalRulePatterns: [],
+      addRules: () => {},
+      inheritPermissionFrom: () => {},
+      recordApprovalResult: () => {},
+    } as unknown as IAgentPermissionRulesService;
+    const childPermissionRules = {
+      ...parentPermissionRules,
+      inheritPermissionFrom: vi.fn(),
+    } as unknown as IAgentPermissionRulesService;
     const lifecycle = createAgentLifecycleStub({
       createAgentIds: ['agent-child'],
       handleServices: new Map([
-        ['main', new Map([[IAgentUserToolService, parentUserTools]])],
-        ['agent-child', new Map([[IAgentUserToolService, childUserTools]])],
+        ['main', new Map<unknown, unknown>([
+          [IAgentUserToolService, parentUserTools],
+          [IAgentPermissionRulesService, parentPermissionRules],
+        ])],
+        ['agent-child', new Map<unknown, unknown>([
+          [IAgentUserToolService, childUserTools],
+          [IAgentPermissionRulesService, childPermissionRules],
+        ])],
       ]),
     });
     const context = createAgentToolContext(lifecycle);
@@ -685,6 +714,7 @@ describe('Agent tool execution contract', () => {
     });
 
     expect(childUserTools.inheritUserTools).toHaveBeenCalledWith(parentUserTools);
+    expect(childPermissionRules.inheritPermissionFrom).toHaveBeenCalledWith(parentPermissionRules);
   });
 
   it('falls back to coder for an empty subagent type', async () => {

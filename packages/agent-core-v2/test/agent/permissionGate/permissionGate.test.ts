@@ -563,6 +563,7 @@ function mutablePermissionRulesService(
       return options.sessionApprovalRulePatterns();
     },
     addRules: () => {},
+    inheritPermissionFrom: () => {},
     recordApprovalResult: (record) => options.record?.(record),
   };
 }

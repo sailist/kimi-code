@@ -12,6 +12,7 @@ import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMo
 import { IAgentProfileService, type ProfileData } from '#/agent/profile/profile';
 import { IAgentLoopService } from '#/agent/loop/loop';
 import { IAgentUserToolService } from '#/agent/userTool/userTool';
+import { IAgentPermissionRulesService } from '#/agent/permissionRules/permissionRules';
 import { IEventBus, type DomainEvent } from '#/app/event/eventBus';
 import { IAgentProfileCatalogService } from '#/app/agentProfileCatalog/agentProfileCatalog';
 import { APIProviderRateLimitError } from '#/app/llmProtocol/errors';
@@ -1004,13 +1005,16 @@ describe('SessionSwarmService metadata compatibility', () => {
     );
   });
 
-  it('inherits parent user tools on spawned children', async () => {
+  it('inherits parent user tools and permission memory on spawned children', async () => {
     const parentUserTools = userToolServiceStub();
     const childUserTools = userToolServiceStub();
+    const parentPermissionRules = permissionRulesServiceStub();
+    const childPermissionRules = permissionRulesServiceStub();
     handles.set(
       'main',
-      agentHandle('main', lifecycle, eventBus, {}, new Map([
+      agentHandle('main', lifecycle, eventBus, {}, new Map<unknown, unknown>([
         [IAgentUserToolService, parentUserTools],
+        [IAgentPermissionRulesService, parentPermissionRules],
       ])),
     );
     createAgent.mockImplementationOnce((opts: CreateAgentOptions = {}) => {
@@ -1025,7 +1029,10 @@ describe('SessionSwarmService metadata compatibility', () => {
           thinkingLevel: opts.binding?.thinking ?? 'medium',
           cwd: opts.binding?.cwd ?? '/repo',
         },
-        new Map([[IAgentUserToolService, childUserTools]]),
+        new Map<unknown, unknown>([
+          [IAgentUserToolService, childUserTools],
+          [IAgentPermissionRulesService, childPermissionRules],
+        ]),
       );
       handles.set(id, handle);
       return handle;
@@ -1038,6 +1045,7 @@ describe('SessionSwarmService metadata compatibility', () => {
     });
 
     expect(childUserTools.inheritUserTools).toHaveBeenCalledWith(parentUserTools);
+    expect(childPermissionRules.inheritPermissionFrom).toHaveBeenCalledWith(parentPermissionRules);
   });
 
   it('keeps v1 resume ownership errors inside the per-subagent result', async () => {
@@ -1300,6 +1308,7 @@ function agentHandle(
           } as unknown as IAgentLoopService;
         }
         if (serviceId === IAgentUserToolService) return userToolServiceStub();
+        if (serviceId === IAgentPermissionRulesService) return permissionRulesServiceStub();
         if (serviceId === IEventBus) return eventBus;
         if (serviceId === ITelemetryService) return noopTelemetryService;
         if (serviceId === IAgentLifecycleService) return lifecycle;
@@ -1328,6 +1337,17 @@ function userToolServiceStub(): IAgentUserToolService {
     inheritUserTools: vi.fn<(parent: IAgentUserToolService) => void>(),
     register: () => {},
     unregister: () => {},
+  };
+}
+
+function permissionRulesServiceStub(): IAgentPermissionRulesService {
+  return {
+    _serviceBrand: undefined,
+    rules: [],
+    sessionApprovalRulePatterns: [],
+    addRules: () => {},
+    inheritPermissionFrom: vi.fn<(source: IAgentPermissionRulesService) => void>(),
+    recordApprovalResult: () => {},
   };
 }
 

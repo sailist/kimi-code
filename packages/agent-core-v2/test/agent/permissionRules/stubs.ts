@@ -22,6 +22,7 @@ export function stubPermissionRulesService(
     },
     sessionApprovalRulePatterns: [],
     addRules: () => {},
+    inheritPermissionFrom: () => {},
     recordApprovalResult: () => {},
   };
 }

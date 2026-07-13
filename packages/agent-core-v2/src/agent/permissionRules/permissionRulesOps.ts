@@ -1,6 +1,7 @@
 /**
  * `permissionRules` domain (L3) — wire Model (`PermissionRulesModel`) and the
- * `permission.rules.add` (`addPermissionRules`) / `permission.record_approval_result`
+ * `permission.rules.add` (`addPermissionRules`) / `permission.inherit`
+ * (`inheritPermission`) / `permission.record_approval_result`
  * (`recordApprovalResult`) Ops for the agent's permission rules and session-scoped
  * approval patterns.
  *
@@ -42,6 +43,7 @@ declare module '#/wire/types' {
 
   interface TransientOpMap {
     'permission.rules.add': typeof addPermissionRules;
+    'permission.inherit': typeof inheritPermission;
   }
 }
 
@@ -51,6 +53,42 @@ export const addPermissionRules = PermissionRulesModel.defineOp('permission.rule
   apply: (s, p) => {
     if (p.rules.length === 0) return s;
     return { ...s, rules: [...s.rules, ...p.rules] };
+  },
+});
+
+/**
+ * One-shot snapshot inheritance from a parent agent at child creation (v1's
+ * `parent` chain, applied the v2 way: an explicit copy, like the child's
+ * permission mode and user tools). Rules already present (e.g. config rules
+ * seeded by the permission-rules config bridge) are deduped by
+ * `decision:scope:pattern`; approval patterns dedupe by value. Transient like
+ * `permission.rules.add`: a child never outlives its session, so nothing here
+ * needs the wire log.
+ */
+export const inheritPermission = PermissionRulesModel.defineOp('permission.inherit', {
+  schema: z.object({
+    rules: z.custom<readonly PermissionRule[]>(),
+    sessionApprovalRulePatterns: z.custom<readonly string[]>(),
+  }),
+  persist: false,
+  apply: (s, p) => {
+    const ruleKey = (rule: PermissionRule): string =>
+      `${rule.decision}:${rule.scope}:${rule.pattern}`;
+    const existing = new Set(s.rules.map(ruleKey));
+    const rules = [...s.rules, ...p.rules.filter((rule) => !existing.has(ruleKey(rule)))];
+    const sessionApprovalRulePatterns = [
+      ...s.sessionApprovalRulePatterns,
+      ...p.sessionApprovalRulePatterns.filter(
+        (pattern) => !s.sessionApprovalRulePatterns.includes(pattern),
+      ),
+    ];
+    if (
+      rules.length === s.rules.length &&
+      sessionApprovalRulePatterns.length === s.sessionApprovalRulePatterns.length
+    ) {
+      return s;
+    }
+    return { ...s, rules, sessionApprovalRulePatterns };
   },
 });
 

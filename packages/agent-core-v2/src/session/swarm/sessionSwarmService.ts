@@ -21,6 +21,7 @@ import { linkAbortSignal } from '#/_base/utils/abort';
 import type { IAgentScopeHandle } from '#/_base/di/scope';
 import { IAgentProfileService } from '#/agent/profile/profile';
 import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMode';
+import { IAgentPermissionRulesService } from '#/agent/permissionRules/permissionRules';
 import { IAgentLoopService } from '#/agent/loop/loop';
 import { IAgentUserToolService } from '#/agent/userTool/userTool';
 import type { SubagentSuspendedEvent } from '@moonshot-ai/protocol';
@@ -156,6 +157,11 @@ export class SessionSwarmService implements ISessionSwarmService {
     child.accessor
       .get(IAgentUserToolService)
       .inheritUserTools(caller.accessor.get(IAgentUserToolService));
+    // Inherit the caller's rules and session-approval memory (v1's `parent`
+    // chain) so approvals already granted to the caller are not re-asked.
+    child.accessor
+      .get(IAgentPermissionRulesService)
+      .inheritPermissionFrom(caller.accessor.get(IAgentPermissionRulesService));
     emitAgentRunSpawned(caller, child.id, {
       profileName: options.profileName,
       parentToolCallId: options.parentToolCallId,
