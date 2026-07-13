@@ -567,4 +567,18 @@ describe('ConfigService file-error defenses', () => {
     ).toBe(true);
     disposables.dispose();
   });
+
+  it('set(domain, undefined) clears the domain from state and disk', async () => {
+    const { disposables, ix, storage } = setup();
+    await seedToml(storage, 'default_provider = "kimi"\n');
+    const config = ix.get(IConfigService);
+    await config.ready;
+    expect(config.get('defaultProvider')).toBe('kimi');
+
+    await config.set('defaultProvider', undefined);
+
+    expect(config.get('defaultProvider')).toBeUndefined();
+    expect(await readToml(storage)).not.toContain('default_provider');
+    disposables.dispose();
+  });
 });

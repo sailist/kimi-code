@@ -791,6 +791,7 @@ describe('provisionManagedKimiCodeConfig', () => {
         },
       },
       defaultModel: 'kimi-code/kimi-for-coding',
+      defaultProvider: KIMI_CODE_PROVIDER_NAME,
       models: {
         'kimi-code/kimi-for-coding': {
           provider: KIMI_CODE_PROVIDER_NAME,
@@ -825,11 +826,13 @@ describe('provisionManagedKimiCodeConfig', () => {
       removedProvider: true,
       removedModels: ['kimi-code/kimi-for-coding'],
       defaultModelCleared: true,
+      defaultProviderCleared: true,
       removedServices: ['moonshotSearch', 'moonshotFetch'],
     });
     expect(config.providers[KIMI_CODE_PROVIDER_NAME]).toBeUndefined();
     expect(config.providers['custom']).toMatchObject({ apiKey: 'sk-existing' });
     expect(config.defaultModel).toBeUndefined();
+    expect(config['defaultProvider']).toBeUndefined();
     expect(config.models?.['kimi-code/kimi-for-coding']).toBeUndefined();
     expect(config.models?.['custom-default']).toMatchObject({ provider: 'custom' });
     expect(config.services?.moonshotSearch).toBeUndefined();
@@ -837,6 +840,28 @@ describe('provisionManagedKimiCodeConfig', () => {
     expect(config.services?.['otherService']).toMatchObject({
       baseUrl: 'https://service.example.test',
     });
+  });
+
+  it('keeps a default provider pinned to another provider on logout', () => {
+    const config: ManagedKimiConfigShape = {
+      providers: {
+        [KIMI_CODE_PROVIDER_NAME]: {
+          type: 'kimi',
+          apiKey: '',
+          oauth: { storage: 'file', key: 'oauth/kimi-code' },
+        },
+        custom: {
+          type: 'kimi',
+          apiKey: 'sk-existing',
+        },
+      },
+      defaultProvider: 'custom',
+    };
+
+    const result = clearManagedKimiCodeConfig(config);
+
+    expect(result.defaultProviderCleared).toBe(false);
+    expect(config['defaultProvider']).toBe('custom');
   });
 });
 

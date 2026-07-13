@@ -38,7 +38,14 @@ describe('ProviderService', () => {
     registry = new ConfigRegistry();
     providers = {};
     defaultProvider = undefined;
-    configSet = vi.fn().mockResolvedValue(undefined);
+    configSet = vi.fn(async (domain: string, value: unknown) => {
+      // Mirror the real clear semantics so the defaultProvider test below
+      // asserts the effect, not just the call (CFG-2 slipped through when
+      // this was a bare mock).
+      if (domain === 'defaultProvider' && value === undefined) {
+        defaultProvider = undefined;
+      }
+    });
     configReplace = vi.fn().mockResolvedValue(undefined);
     ix = createServices(disposables, {
       additionalServices: (reg) => {
@@ -119,6 +126,8 @@ describe('ProviderService', () => {
       p2: { type: 'kimi' },
     });
     expect(configSet).toHaveBeenCalledWith('defaultProvider', undefined);
+    // Effect, not just the call: the pinned default must actually be cleared.
+    expect(defaultProvider).toBeUndefined();
   });
 
   it('delete leaves defaultProvider when removing a different provider', async () => {

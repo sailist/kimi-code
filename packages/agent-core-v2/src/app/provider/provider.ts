@@ -74,6 +74,13 @@ export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
 
 export const PROVIDERS_SECTION = 'providers';
 
+/**
+ * Config domain pinning the default provider name. Scalar section with no
+ * registered schema — `config.set(DEFAULT_PROVIDER_SECTION, undefined)`
+ * clears it.
+ */
+export const DEFAULT_PROVIDER_SECTION = 'defaultProvider';
+
 /** Reserved key for the env-driven synthetic provider (`KIMI_MODEL_API_KEY` …). */
 export const ENV_MODEL_PROVIDER_KEY = '__kimi_env__';
 

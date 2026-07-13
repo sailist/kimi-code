@@ -377,12 +377,19 @@ export class ConfigService extends Disposable implements IConfigService {
   ): Promise<void> {
     await this.ready;
     if (target === ConfigTarget.Memory) {
-      const next = this.registry.merge(domain, this.memory[domain], patch);
-      const validated = this.registry.validate(domain, next);
-      if (validated === undefined) {
+      // `undefined` clears: merging it into a scalar base would be a silent
+      // no-op (`patch ?? base`), so handle it before merge — same as the
+      // User-target path below and `replace(domain, undefined)`.
+      if (patch === undefined) {
         delete this.memory[domain];
       } else {
-        this.memory[domain] = validated;
+        const next = this.registry.merge(domain, this.memory[domain], patch);
+        const validated = this.registry.validate(domain, next);
+        if (validated === undefined) {
+          delete this.memory[domain];
+        } else {
+          this.memory[domain] = validated;
+        }
       }
       this.commit('set', [domain]);
       return;
@@ -392,14 +399,19 @@ export class ConfigService extends Disposable implements IConfigService {
       // `readConfigFileForUpdate`): persisting now would replace the user's
       // broken-but-fixable file with our in-memory base.
       await this.assertOnDiskConfigUsable();
-      const base = this.raw[domain];
-      const next = this.registry.merge(domain, base, patch);
-      const validated = this.registry.validate(domain, next);
-      const stripped = this.stripEnv(domain, validated);
-      if (stripped === undefined) {
+      if (patch === undefined) {
+        // Clearing semantics — see the Memory-target branch above.
         delete this.raw[domain];
       } else {
-        this.raw[domain] = stripped;
+        const base = this.raw[domain];
+        const next = this.registry.merge(domain, base, patch);
+        const validated = this.registry.validate(domain, next);
+        const stripped = this.stripEnv(domain, validated);
+        if (stripped === undefined) {
+          delete this.raw[domain];
+        } else {
+          this.raw[domain] = stripped;
+        }
       }
       await this.persist(domain);
       this.rebuildEffective('set', [domain]);

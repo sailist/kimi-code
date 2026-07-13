@@ -67,6 +67,7 @@ describe('OAuthService', () => {
   let models: Record<string, ModelAlias>;
   let services: Record<string, unknown> | undefined;
   let defaultModel: string | undefined;
+  let defaultProvider: string | undefined;
   let thinking: { enabled?: boolean; effort?: string } | undefined;
   let toolkit: FakeToolkit;
   let providerSet: ReturnType<typeof vi.fn>;
@@ -92,10 +93,15 @@ describe('OAuthService', () => {
     models = {};
     services = undefined;
     defaultModel = undefined;
+    defaultProvider = undefined;
     thinking = undefined;
     configSet = vi.fn(async (domain: string, value: unknown) => {
       if (domain === 'defaultModel') {
         defaultModel = value as string | undefined;
+        return;
+      }
+      if (domain === 'defaultProvider') {
+        defaultProvider = value as string | undefined;
         return;
       }
       if (domain === 'thinking') {
@@ -174,7 +180,7 @@ describe('OAuthService', () => {
   }
 
   function configBacking(): Record<string, unknown> {
-    return { providers, models, services, defaultModel, thinking };
+    return { providers, models, services, defaultModel, defaultProvider, thinking };
   }
 
   function stubManagedModelsFetch(): ReturnType<typeof vi.fn> {
@@ -444,6 +450,7 @@ describe('OAuthService', () => {
       },
     };
     defaultModel = 'kimi-code/kimi-k2';
+    defaultProvider = OAUTH_PROVIDER;
     thinking = { enabled: true };
     const svc = createService();
 
@@ -461,7 +468,9 @@ describe('OAuthService', () => {
       },
     });
     expect(configSet).toHaveBeenCalledWith('defaultModel', undefined);
+    expect(configSet).toHaveBeenCalledWith('defaultProvider', undefined);
     expect(configSet).toHaveBeenCalledWith('thinking', undefined);
+    expect(defaultProvider).toBeUndefined();
   });
 
   it('logout removes managed web services while preserving unrelated services', async () => {

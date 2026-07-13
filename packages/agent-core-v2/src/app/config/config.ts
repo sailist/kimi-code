@@ -162,6 +162,11 @@ export interface IConfigService {
   get<T = unknown>(domain: string): T;
   inspect<T = unknown>(domain: string): ConfigInspectValue<T>;
   getAll(): ResolvedConfig;
+  /**
+   * Merge `patch` into the domain's current value. Passing `undefined` as the
+   * patch CLEARS the domain (same as `replace(domain, undefined)`) — merging
+   * `undefined` into a scalar value would otherwise be a silent no-op.
+   */
   set(domain: string, patch: unknown, target?: ConfigTarget): Promise<void>;
   replace(domain: string, value: unknown, target?: ConfigTarget): Promise<void>;
   reload(): Promise<void>;

@@ -67,6 +67,7 @@ export interface ManagedKimiCodeCleanupResult {
   readonly removedProvider: boolean;
   readonly removedModels: readonly string[];
   readonly defaultModelCleared: boolean;
+  readonly defaultProviderCleared: boolean;
   readonly removedServices: readonly string[];
 }
 
@@ -726,6 +727,14 @@ export function clearManagedKimiCodeConfig(
     defaultModelCleared = true;
   }
 
+  // v1 parity (`applyManagedKimiCodeLogoutConfig`): a default provider pinned
+  // to the managed provider must not dangle after logout.
+  let defaultProviderCleared = false;
+  if (config['defaultProvider'] === KIMI_CODE_PROVIDER_NAME) {
+    config['defaultProvider'] = undefined;
+    defaultProviderCleared = true;
+  }
+
   const removedServices: string[] = [];
   if (config.services?.moonshotSearch !== undefined) {
     delete config.services.moonshotSearch;
@@ -744,6 +753,7 @@ export function clearManagedKimiCodeConfig(
     removedProvider,
     removedModels,
     defaultModelCleared,
+    defaultProviderCleared,
     removedServices,
   };
 }

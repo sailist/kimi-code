@@ -14,15 +14,13 @@ import { Emitter, type Event } from '#/_base/event';
 import { IConfigService } from '#/app/config/config';
 
 import {
+  DEFAULT_PROVIDER_SECTION,
   type ProviderConfig,
   type ProvidersChangedEvent,
   type ProvidersSection,
   IProviderService,
   PROVIDERS_SECTION,
 } from './provider';
-
-/** Top-level scalar config section naming the fallback provider (v1 `default_provider`). */
-const DEFAULT_PROVIDER_SECTION = 'defaultProvider';
 
 export class ProviderService extends Disposable implements IProviderService {
   declare readonly _serviceBrand: undefined;
