@@ -18,6 +18,7 @@ import { type McpServerConfig } from '#/agent/mcp/config-schema';
 import { IAgentMcpService } from '#/agent/mcp/mcp';
 import { McpConnectionManager } from '#/agent/mcp/connection-manager';
 import { IAgentPermissionModeService } from '#/agent/permissionMode/permissionMode';
+import { IAgentPermissionRulesService } from '#/agent/permissionRules/permissionRules';
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
 import { AgentLifecycleService } from '#/session/agentLifecycle/agentLifecycleService';
 import { ensureMainAgent } from '#/session/agentLifecycle/mainAgent';
@@ -256,6 +257,15 @@ describe('AgentLifecycleService', () => {
       setMode: permissionModeSetMode,
       onDidChangeMode: Event.None,
     } as unknown as IAgentPermissionModeService);
+    // The permission-rules config bridge is ignited per created agent and
+    // seeds this service; stub it so agent creation needs no wire model.
+    ix.stub(IAgentPermissionRulesService, {
+      _serviceBrand: undefined,
+      rules: [],
+      sessionApprovalRulePatterns: [],
+      addRules: () => {},
+      recordApprovalResult: () => {},
+    } as unknown as IAgentPermissionRulesService);
     ix.set(IAgentLifecycleService, new SyncDescriptor(AgentLifecycleService));
   });
   afterEach(() => {

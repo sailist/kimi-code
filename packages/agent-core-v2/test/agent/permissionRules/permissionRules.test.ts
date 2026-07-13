@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SyncDescriptor } from '#/_base/di/descriptors';
 import { DisposableStore } from '#/_base/di/lifecycle';
 import { TestInstantiationService } from '#/_base/di/test';
+import { IConfigService } from '#/app/config/config';
+import { PERMISSION_SECTION } from '#/agent/permissionRules/configSection';
 import { IAgentPermissionRulesService, type PermissionApprovalResultRecord, type PermissionRule } from '#/agent/permissionRules/permissionRules';
+import { IPermissionRulesConfigBridge, PermissionRulesConfigBridge } from '#/agent/permissionRules/permissionRulesConfigBridge';
 import { AgentPermissionRulesService } from '#/agent/permissionRules/permissionRulesService';
 import { PermissionRulesModel } from '#/agent/permissionRules/permissionRulesOps';
 import { AppendLogStore } from '#/persistence/backends/node-fs/appendLogStore';
@@ -146,5 +149,34 @@ describe('AgentPermissionRulesService (wire-backed)', () => {
       written.push(record);
     }
     expect(written).toEqual([]);
+  });
+});
+
+describe('PermissionRulesConfigBridge', () => {
+  function stubConfig(value: unknown): void {
+    ix.stub(IConfigService, {
+      get: ((domain: string) => (domain === PERMISSION_SECTION ? value : undefined)) as IConfigService['get'],
+    } as unknown as IConfigService);
+    ix.set(IPermissionRulesConfigBridge, new SyncDescriptor(PermissionRulesConfigBridge));
+  }
+
+  it('seeds the rules service from the [permission] config section', () => {
+    const configRules: PermissionRule[] = [
+      { decision: 'deny', scope: 'user', pattern: 'Bash(rm *)' },
+      { decision: 'allow', scope: 'user', pattern: 'Read(**)' },
+    ];
+    stubConfig({ rules: configRules });
+
+    ix.get(IPermissionRulesConfigBridge);
+
+    expect(svc.rules).toEqual(configRules);
+  });
+
+  it('seeds nothing when the [permission] section is absent', () => {
+    stubConfig(undefined);
+
+    ix.get(IPermissionRulesConfigBridge);
+
+    expect(svc.rules).toEqual([]);
   });
 });

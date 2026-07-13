@@ -406,6 +406,7 @@ export * from '#/agent/permissionPolicy/policies/deny-all';
 import '#/agent/permissionRules/configSection';
 export * from '#/agent/permissionRules/permissionRules';
 export * from '#/agent/permissionRules/matchesRule';
+export * from '#/agent/permissionRules/permissionRulesConfigBridge';
 export * from '#/agent/permissionRules/permissionRulesService';
 import '#/agent/profile/configSection';
 export * from '#/agent/profile/profile';

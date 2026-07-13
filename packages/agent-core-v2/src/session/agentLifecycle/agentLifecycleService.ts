@@ -58,6 +58,7 @@ import { IAgentContextMemoryService } from '#/agent/contextMemory/contextMemory'
 import { IAgentBuiltinToolsRegistrar } from '#/agent/toolRegistry/builtinToolsRegistrar';
 import { IAgentMediaToolsRegistrar } from '#/agent/media/mediaTools';
 import { IImageConfigBridge } from '#/agent/media/imageConfigBridge';
+import { IPermissionRulesConfigBridge } from '#/agent/permissionRules/permissionRulesConfigBridge';
 import {
   AGENT_WIRE_PROTOCOL_VERSION,
   IAgentWireRecordService,
@@ -333,6 +334,11 @@ export class AgentLifecycleService extends Disposable implements IAgentLifecycle
     // `onBeforeExecuteTool` so same-step duplicates are suppressed before
     // authorization runs (v1 ran dedup in prepare, before authorize).
     handle.accessor.get(IAgentToolDedupeService);
+    // Permission-rules config bridge: seeds the agent's rules model from the
+    // `[permission]` config section before the first turn, so the
+    // `user-configured-*` policies see the user's deny/allow/ask rules from the
+    // very first tool call (v1's `initialRules`).
+    handle.accessor.get(IPermissionRulesConfigBridge);
     // External hook adapter: registers listeners on the agent's domain hooks
     // before the first turn. No business service injects it directly; it
     // observes their hooks instead.
