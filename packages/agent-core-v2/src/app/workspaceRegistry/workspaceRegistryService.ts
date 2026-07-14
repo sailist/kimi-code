@@ -62,7 +62,6 @@ interface SessionIndexLine {
 export class WorkspaceRegistryService implements IWorkspaceRegistry {
   declare readonly _serviceBrand: undefined;
 
-  /** Whether the once-per-process session-index sync already ran. */
   private merged = false;
   private opQueue: Promise<unknown> = Promise.resolve();
 
@@ -122,7 +121,6 @@ export class WorkspaceRegistryService implements IWorkspaceRegistry {
               lastOpenedAt: now,
             };
       byId.set(id, ws);
-      // An explicit add clears any prior deletion tombstone.
       deletedIds.delete(id);
       await this.store.save({ workspaces: [...byId.values()], deletedIds: [...deletedIds] });
       return ws;
@@ -151,8 +149,6 @@ export class WorkspaceRegistryService implements IWorkspaceRegistry {
     return this.runExclusive(async () => {
       await this.ensureMerged();
       const catalog = await this.loadCatalog();
-      // Soft delete: tombstone the id so the session-index merge cannot
-      // resurrect it, even if sessions still reference the workDir.
       await this.store.save({
         workspaces: catalog.workspaces.filter((ws) => ws.id !== id),
         deletedIds: [...new Set([...catalog.deletedIds, id])],
@@ -160,9 +156,6 @@ export class WorkspaceRegistryService implements IWorkspaceRegistry {
     });
   }
 
-  /** Once-per-process startup sync with the legacy session index (see the
-   *  file header). Runs inside the op mutex, so it cannot interleave with a
-   *  mutation's read-modify-write. */
   private async ensureMerged(): Promise<void> {
     if (this.merged) return;
     const loaded = await this.store.load();
@@ -180,15 +173,10 @@ export class WorkspaceRegistryService implements IWorkspaceRegistry {
     this.merged = true;
   }
 
-  /** Read the current catalog; a missing or malformed file is an empty
-   *  catalog (mirrors v1's tolerant read). */
   private async loadCatalog(): Promise<WorkspaceCatalog> {
     return (await this.store.load()) ?? { workspaces: [], deletedIds: [] };
   }
 
-  /** Add every distinct workDir from the legacy session index that the
-   *  catalog does not know about yet. Tombstoned ids are skipped, so a
-   *  soft-deleted workspace stays deleted. Returns whether anything changed. */
   private async mergeFromSessionIndex(
     byId: Map<string, Workspace>,
     deletedIds: ReadonlySet<string>,
