@@ -1,6 +1,6 @@
 /**
- * Low-level durable file-write primitives — atomic writes plus file and
- * directory fsync helpers.
+ * Low-level durable file-write primitives — atomic whole-value and streamed
+ * writes (tmp + fsync + rename) plus file and directory fsync helpers.
  */
 
 import { randomBytes } from 'node:crypto';
@@ -113,11 +113,6 @@ export async function atomicWrite(
   }
 }
 
-/**
- * Streamed variant of `atomicWrite`: same tmp + fsync + rename discipline, but
- * the content arrives as an `AsyncIterable` so arbitrarily large values never
- * sit in memory at once.
- */
 export async function atomicWriteStream(
   filePath: string,
   source: AsyncIterable<Uint8Array>,
