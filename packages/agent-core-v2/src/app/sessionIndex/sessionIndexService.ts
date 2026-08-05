@@ -246,6 +246,10 @@ export class FileSessionIndex extends Disposable implements ISessionIndex {
     await this.ensureProjection();
   }
 
+  stopReconcileLoop(): void {
+    this.reconcileTimer.cancel();
+  }
+
   private async tick(): Promise<void> {
     if (!this.readModelEnabled()) return;
     if (this.state === 'degraded') {
