@@ -48,7 +48,7 @@ Network requests only go through `github.com` redirects and `codeload.github.com
 
 ### Notes
 
-- Plugin changes apply after `/reload` or in new sessions. After installing, enabling/disabling, or removing a plugin, run `/reload` or `/new`; the current session will not update.
+- Installing or enabling a plugin applies after `/reload` or in new sessions — run `/reload` or `/new`; the current session will not update. Removing or disabling a plugin applies immediately: MCP tools it had loaded into an open session stay visible but fail with a removal notice, and new sessions do not register them. Either way, a running session keeps the system prompt it started with.
 - Local installations are copied to `$KIMI_CODE_HOME/plugins/managed/<id>/`, and the CLI always runs from this managed copy. Editing the original source directory after installation has no effect; you must reinstall.
 - Removing a plugin only deletes the installation record; the managed copy and original source files remain on disk.
 - Plugins are currently installed per-user and apply to all projects; project-level installation scope is not yet supported.
@@ -283,7 +283,7 @@ my-plugin/
     reviewer.md
 ```
 
-Plugin agents rank below every other file source: on a name collision, user-level, extra, project-level, and `--agent-file` agents all win over the plugin-provided one, and replacing a built-in agent still requires an explicit `override: true` in the frontmatter. After installing, enabling, disabling, or removing a plugin, the agent list refreshes in a new session (or on `/reload`); on the v2 engine the live session also refreshes after `/plugins reload`.
+Plugin agents rank below every other file source: on a name collision, user-level, extra, project-level, and `--agent-file` agents all win over the plugin-provided one, and replacing a built-in agent still requires an explicit `override: true` in the frontmatter. After installing or enabling a plugin, the agent list refreshes in a new session (or on `/reload`); disabling or removing a plugin refreshes the list immediately in open sessions as well.
 
 ## MCP Servers in Plugins
 
@@ -316,11 +316,10 @@ HTTP server (remote service):
 
 For stdio servers, `command` can be a command on `PATH` or a path starting with `./` within the plugin root directory. `cwd` likewise must start with `./` and be within the plugin root directory; otherwise the server is ignored.
 
-Plugin MCP servers start after `/reload` or in new sessions. To enable or disable a server:
+Plugin MCP servers start after `/reload` or in new sessions, and stop as soon as they are disabled or their plugin is removed. To enable or disable a server:
 
 ```sh
 /plugins mcp disable kimi-finance finance
-/reload
 
 /plugins mcp enable kimi-finance finance
 /reload

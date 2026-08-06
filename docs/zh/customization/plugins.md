@@ -48,7 +48,7 @@ Plugins 把可复用的 Kimi Code CLI 能力打包成可安装单元——可以
 
 ### 注意事项
 
-- Plugin 变更需要通过 `/reload` 或新会话生效。安装、启用/禁用、移除后，运行 `/reload` 或 `/new`；当前会话不会更新。
+- 安装或启用 plugin 需要通过 `/reload` 或新会话生效——运行 `/reload` 或 `/new`，当前会话不会更新。移除或禁用 plugin 立即生效：已加载到进行中会话的 MCP 工具仍然可见，但调用会失败并返回移除提示，新会话不再注册这些工具。无论哪种情况，运行中的会话都保持启动时的系统提示词。
 - 本地安装会被拷贝到 `$KIMI_CODE_HOME/plugins/managed/<id>/`，CLI 始终从这份托管副本运行。安装后编辑原始源目录不会生效，需重新安装。
 - 移除 plugin 只会删除安装记录，托管副本和原始源文件仍保留在磁盘上。
 - Plugin 目前按用户安装，对所有项目生效，暂不支持项目级安装范围。
@@ -283,7 +283,7 @@ my-plugin/
     reviewer.md
 ```
 
-Plugin Agent 的优先级低于其他文件来源：同名时用户级、额外目录、项目级和 `--agent-file` 的 Agent 都会覆盖 plugin 提供的版本；替换内置 Agent 同样需要在 frontmatter 里显式写 `override: true`。安装、启用、禁用或移除 plugin 后，Agent 列表在新会话（或 `/reload`）时刷新；v2 引擎的当前会话还会在 `/plugins reload` 后刷新。
+Plugin Agent 的优先级低于其他文件来源：同名时用户级、额外目录、项目级和 `--agent-file` 的 Agent 都会覆盖 plugin 提供的版本；替换内置 Agent 同样需要在 frontmatter 里显式写 `override: true`。安装或启用 plugin 后，Agent 列表在新会话（或 `/reload`）时刷新；禁用或移除 plugin 时，进行中的会话也会立即刷新列表。
 
 ## Plugin 中的 MCP servers
 
@@ -316,11 +316,10 @@ HTTP server（远程服务）：
 
 对于 stdio servers，`command` 可以是 `PATH` 上的命令，也可以是 plugin 根目录内以 `./` 开头的路径。`cwd` 同理，必须以 `./` 开头并位于 plugin 根目录内，否则该 server 会被忽略。
 
-Plugin MCP servers 会在 `/reload` 后或新会话中启动。启用或禁用某个 server：
+Plugin MCP servers 会在 `/reload` 后或新会话中启动，并在被禁用或所属 plugin 被移除时立即停止。启用或禁用某个 server：
 
 ```sh
 /plugins mcp disable kimi-finance finance
-/reload
 
 /plugins mcp enable kimi-finance finance
 /reload

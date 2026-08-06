@@ -261,10 +261,13 @@ describe('PluginService (plugin boundary)', () => {
     }
   });
 
-  it('does not fire onDidReload on install / enable / disable / remove; only reloadPlugins notifies', async () => {
+  it('fires onDidReload only when a mutation drops capabilities (disable / remove), not on install / enable', async () => {
     const home = await makeHome();
     await writeValidInstalledFile(home);
-    const pluginRoot = await makePluginDir('notify-demo', { description: 'demo plugin' });
+    const pluginRoot = await makePluginDir('notify-demo', {
+      description: 'demo plugin',
+      mcpServers: { demo: { command: 'node', args: ['server.js'] } },
+    });
     createdDirs.push(pluginRoot);
     const host = makeHost(home);
     try {
@@ -272,18 +275,28 @@ describe('PluginService (plugin boundary)', () => {
       const reloads: ReloadSummary[] = [];
       svc.onDidReload((summary) => reloads.push(summary));
 
+      // Adding capabilities leaves live consumers untouched; the change
+      // applies on /plugins reload or in new sessions.
       await svc.installPlugin({ source: pluginRoot });
-      await svc.setPluginEnabled({ id: 'notify-demo', enabled: false });
-      await svc.setPluginEnabled({ id: 'notify-demo', enabled: true });
-      await svc.removePlugin({ id: 'notify-demo' });
-
-      // Mutations update the catalog in place but leave live consumers
-      // untouched; the change applies on /plugins reload or in new sessions.
       expect(reloads).toHaveLength(0);
-      await expect(svc.listPlugins()).resolves.toEqual([]);
 
-      await svc.reloadPlugins();
+      // Dropping capabilities notifies immediately so live sessions drop
+      // the contribution (MCP servers tombstone).
+      await svc.setPluginEnabled({ id: 'notify-demo', enabled: false });
       expect(reloads).toHaveLength(1);
+
+      await svc.setPluginEnabled({ id: 'notify-demo', enabled: true });
+      expect(reloads).toHaveLength(1);
+
+      await svc.setPluginMcpServerEnabled({ id: 'notify-demo', server: 'demo', enabled: false });
+      expect(reloads).toHaveLength(2);
+
+      await svc.setPluginMcpServerEnabled({ id: 'notify-demo', server: 'demo', enabled: true });
+      expect(reloads).toHaveLength(2);
+
+      await svc.removePlugin({ id: 'notify-demo' });
+      expect(reloads).toHaveLength(3);
+      await expect(svc.listPlugins()).resolves.toEqual([]);
     } finally {
       host.dispose();
     }

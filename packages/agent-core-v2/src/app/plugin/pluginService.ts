@@ -9,10 +9,13 @@
  * serialize through a queue and consumption reads wait on it; while no
  * snapshot has loaded, a consumption read resolves to its per-method
  * fallback instead of rejecting (`hasLoadedSnapshot` exposes the state).
- * Mutations (install / enable / disable / remove) update the catalog in
- * place without firing `onDidReload`, so live sessions stay untouched;
- * workspace-scoped consumers refresh their contributions only on an
- * explicit `reloadPlugins()`. Bound at App scope.
+ * Mutations are asymmetric: adding capabilities (install / enable)
+ * updates the catalog in place without firing `onDidReload`, so live
+ * sessions stay untouched until an explicit `reloadPlugins()` or a new
+ * session; removing capabilities (disable / remove) re-fires
+ * `onDidReload` so workspace consumers drop the contribution
+ * immediately (MCP servers tombstone in live sessions). Bound at App
+ * scope.
  */
 
 import { KIMI_CODE_PROVIDER_NAME } from '@moonshot-ai/kimi-code-oauth';
@@ -101,29 +104,28 @@ export class PluginService extends Service implements IPluginService {
   setPluginEnabled(input: SetPluginEnabledInput): Promise<void> {
     return this.runSerializedOperation(async () => {
       await this.manager.setEnabled(input.id, input.enabled);
+      if (!input.enabled) await this.reloadAndNotify();
     });
   }
 
   setPluginMcpServerEnabled(input: SetPluginMcpServerEnabledInput): Promise<void> {
     return this.runSerializedOperation(async () => {
       await this.manager.setMcpServerEnabled(input.id, input.server, input.enabled);
+      if (!input.enabled) await this.reloadAndNotify();
     });
   }
 
   removePlugin(input: RemovePluginInput): Promise<void> {
     return this.runSerializedOperation(async () => {
       await this.manager.remove(input.id);
+      await this.reloadAndNotify();
     });
   }
 
   reloadPlugins(): Promise<ReloadSummary> {
     const reload = this.enqueueMutation(async () => {
       try {
-        const summary = await this.manager.reload();
-        this.snapshotLoaded = true;
-        this.loadError = undefined;
-        this.onDidReloadEmitter.fire(summary);
-        return summary;
+        return await this.reloadAndNotify();
       } catch (error) {
         this.loadError = error instanceof Error ? error : new Error(String(error));
         throw new Error2(
@@ -138,6 +140,14 @@ export class PluginService extends Service implements IPluginService {
       () => undefined,
     );
     return reload;
+  }
+
+  private async reloadAndNotify(): Promise<ReloadSummary> {
+    const summary = await this.manager.reload();
+    this.snapshotLoaded = true;
+    this.loadError = undefined;
+    this.onDidReloadEmitter.fire(summary);
+    return summary;
   }
 
   getPluginInfo(input: GetPluginInfoInput): Promise<PluginInfo> {

@@ -63,7 +63,7 @@ You do not have to set the connection timeout or the single tool-call timeout pe
 
 HTTP and SSE servers support providing static credentials via `headers` or `bearerTokenEnvVar`. When OAuth is needed, run `/mcp-config login <server-name>` to complete browser-based authorization.
 
-Plugins can also declare MCP servers in their manifest. Servers declared by a plugin are enabled by default and can be disabled or re-enabled in `/plugins`, then a new session must be started. See [Plugins](./plugins.md#mcp-servers-in-plugins) for details.
+Plugins can also declare MCP servers in their manifest. Servers declared by a plugin are enabled by default: disabling one in `/plugins` takes effect immediately — open sessions keep the tools visible but calls fail with a removal notice — while re-enabling applies after `/reload` or in a new session. See [Plugins](./plugins.md#mcp-servers-in-plugins) for details.
 
 ::: warning Note
 stdio entries in a project-level `.kimi-code/mcp.json` execute local commands when a session starts. Only enable these in repositories you trust.
