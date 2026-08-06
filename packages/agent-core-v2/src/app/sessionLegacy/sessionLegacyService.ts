@@ -6,6 +6,10 @@
  * the result into the v1 wire shape. Only `updateProfile` (the cross-domain
  * `agent_config` patch), `status` (the best-effort status rollup), and `goal`
  * (the current-goal read) live here. No business logic is duplicated here.
+ * In the status rollup, `max_context_tokens` is omitted when the context
+ * limit is unknown — 0 is the engine's "unknown" marker, never emitted: an
+ * unresolvable bound alias omits the field outright, while an unbound session
+ * falls back to the default model's limit first, mirroring the WS status push.
  */
 
 import type { GoalSnapshot } from '#/agent/goal/types';
@@ -29,12 +33,12 @@ import type { PermissionMode } from '#/agent/permissionPolicy/types';
 import { IAgentPlanService } from '#/features/plan/plan';
 import { IAgentProfileService } from '#/agent/profile/profile';
 import { IAgentSwarmService } from '#/agent/swarm/swarm';
-import { IConfigService } from '#/app/config/config';
 import {
   getLiveSessionById,
   resumeSessionById,
 } from '#/app/workspaceLifecycle/sessionLookup';
 import { IModelCatalog } from '#/kosong/model/catalog';
+import { IModelService } from '#/kosong/model/model';
 import { ErrorCodes, Error2 } from '#/errors';
 import { ensureMainAgent } from '#/session/agentLifecycle/mainAgent';
 import { IAgentLifecycleService } from '#/session/agentLifecycle/agentLifecycle';
@@ -176,14 +180,11 @@ export class SessionLegacyService implements ISessionLegacyService {
     const swarm = agent.accessor.get(IAgentSwarmService);
 
     const model = profile.getModel();
-    const caps = profile.getModelCapabilities() as {
-      max_context_tokens?: number;
-      max_input_tokens?: number;
-    };
-    const maxTokens =
-      model === ''
-        ? resolveDefaultModelContextTokens(agent)
-        : (caps.max_input_tokens ?? caps.max_context_tokens ?? 0);
+    const capabilities = profile.getModelCapabilities();
+    let maxTokens = capabilities.max_input_tokens ?? capabilities.max_context_tokens;
+    if (maxTokens === 0 && model === '') {
+      maxTokens = resolveDefaultModelContextTokens(agent) ?? 0;
+    }
     const tokens = tokenCounting.statusSize();
     const planData = await plan.status();
 
@@ -195,7 +196,7 @@ export class SessionLegacyService implements ISessionLegacyService {
       plan_mode: planData !== null,
       swarm_mode: swarm.isActive,
       context_tokens: tokens,
-      max_context_tokens: maxTokens,
+      max_context_tokens: maxTokens > 0 ? maxTokens : undefined,
       context_usage: maxTokens > 0 ? Math.min(1, tokens / maxTokens) : 0,
     };
   }
@@ -216,14 +217,14 @@ export class SessionLegacyService implements ISessionLegacyService {
   }
 }
 
-function resolveDefaultModelContextTokens(agent: IAgentScopeHandle): number {
-  const defaultModel = agent.accessor.get(IConfigService).get<string>('defaultModel');
-  if (typeof defaultModel !== 'string' || defaultModel.length === 0) return 0;
+function resolveDefaultModelContextTokens(agent: IAgentScopeHandle): number | undefined {
+  const defaultModel = agent.accessor.get(IModelService).getDefaultModel();
+  if (defaultModel === undefined || defaultModel.length === 0) return undefined;
   try {
     const capabilities = agent.accessor.get(IModelCatalog).get(defaultModel).capabilities;
     return capabilities.max_input_tokens ?? capabilities.max_context_tokens;
   } catch {
-    return 0;
+    return undefined;
   }
 }
 
