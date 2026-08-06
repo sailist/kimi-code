@@ -872,9 +872,6 @@ export class AgentTaskService extends Disposable implements IAgentTaskService {
           entry.waiters.push(resolve);
         }),
         new Promise<void>((resolve) => {
-          // A clamped early return just makes callers (e.g. the print drain
-          // loop) re-poll — the task may still be running, which the caller
-          // observes from the returned info.
           timeout = setClampedTimeout(resolve, timeoutMs);
           timeout.unref?.();
         }),
