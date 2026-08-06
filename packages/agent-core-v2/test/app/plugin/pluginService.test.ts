@@ -261,7 +261,7 @@ describe('PluginService (plugin boundary)', () => {
     }
   });
 
-  it('fires onDidReload after install / enable / disable / remove so workspace consumers refresh immediately', async () => {
+  it('does not fire onDidReload on install / enable / disable / remove; only reloadPlugins notifies', async () => {
     const home = await makeHome();
     await writeValidInstalledFile(home);
     const pluginRoot = await makePluginDir('notify-demo', { description: 'demo plugin' });
@@ -277,8 +277,13 @@ describe('PluginService (plugin boundary)', () => {
       await svc.setPluginEnabled({ id: 'notify-demo', enabled: true });
       await svc.removePlugin({ id: 'notify-demo' });
 
-      expect(reloads).toHaveLength(4);
+      // Mutations update the catalog in place but leave live consumers
+      // untouched; the change applies on /plugins reload or in new sessions.
+      expect(reloads).toHaveLength(0);
       await expect(svc.listPlugins()).resolves.toEqual([]);
+
+      await svc.reloadPlugins();
+      expect(reloads).toHaveLength(1);
     } finally {
       host.dispose();
     }
