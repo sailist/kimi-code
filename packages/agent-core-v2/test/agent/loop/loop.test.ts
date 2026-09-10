@@ -5,6 +5,7 @@ import { emptyUsage } from '#human/llm/usage';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { IDisposable } from '#/_base/di/lifecycle';
+import { Event } from '#/_base/event';
 import { IAgentProfileService } from '#/index';
 import { IAgentLLMRequesterService } from '#/agent/llmRequester/llmRequester';
 import type { ModelRequestTiming } from '#/llm-adapter/model/model-requester';
@@ -13,6 +14,14 @@ import type { ContextMessage } from '#/agent/contextMemory/types';
 import type { LoopRecordedEvent } from '#/agent/contextMemory/loopEventFold';
 import { IAgentGoalService } from '#/features/goal/goalService';
 import { IAgentLoopService, type Turn } from '#/agent/loop/loop';
+import { createActor } from '#human/xstate2';
+import { createAgentMachine } from '#human/agent/machine';
+import { agentContextOf } from '#/agent/scopeContext/scopeContext';
+import type { AgentContext } from '#/agent/agentContext/agentContext';
+import {
+  IAgentLifecycleService,
+  type AgentScopeCreatedEvent,
+} from '#/session/agentLifecycle/agentLifecycle';
 import {
   AssistantDelta,
   ThinkingDelta,
@@ -34,6 +43,7 @@ import {
   InMemoryWireRecordPersistence,
   permissionModeServices,
   requesterFromGenerateFn,
+  sessionService,
   wireRecordPersistenceServices,
   type TestAgentContext,
   type TestAgentOptions,
@@ -846,19 +856,23 @@ describe('Agent loop', () => {
       }
     });
     ctx.mockNextResponse({ type: 'text', text: 'one' });
-    ctx.mockNextResponse({ type: 'text', text: 'one-continued' });
     ctx.mockNextResponse({ type: 'text', text: 'two' });
     ctx.mockNextResponse({ type: 'text', text: 'three' });
+    ctx.mockNextResponse({ type: 'text', text: 'four' });
 
     const first = submitTurn(loop, 'first').turn;
     const second = submitTurn(loop, 'second').turn;
     const third = submitTurn(loop, 'third').turn;
     loop.notify();
+    const launchedStates = [first.state, second.state, third.state];
 
-    expect([first.state, second.state, third.state]).toEqual(['running', 'queued', 'queued']);
     await Promise.all([first.result, second.result, third.result]);
     subscription.dispose();
 
+    expect(launchedStates).toEqual(['running', 'queued', 'queued']);
+    await expect(first.result).resolves.toMatchObject({ type: 'completed' });
+    await expect(second.result).resolves.toMatchObject({ type: 'completed' });
+    await expect(third.result).resolves.toMatchObject({ type: 'completed' });
     expect(events).toEqual([
       'turn.started:0',
       'turn.ended:0',
@@ -916,6 +930,43 @@ describe('Agent loop', () => {
     lease?.dispose();
     await expect(held.result).resolves.toMatchObject({ type: 'completed' });
     subscription.dispose();
+
+    const parked = createTestAgent(sessionService(IAgentLifecycleService, parkedLifecycleStub()));
+    try {
+      const parkedLoop = parked.get(IAgentLoopService);
+      const early = submitTurn(parkedLoop, 'early').turn;
+      expect(parkedLoop.status()).toMatchObject({ state: 'idle', hasPendingRequests: true });
+      expect(parked.llmCalls).toHaveLength(0);
+
+      const earlyQueueId = parkedLoop.status().pendingPromptIds[0]!;
+      expect(parkedLoop.cancelQueued(earlyQueueId, new Error('not wanted'))).toBe(true);
+      await expect(early.result).resolves.toMatchObject({ type: 'cancelled' });
+
+      const real = submitTurn(parkedLoop, 'real').turn;
+      let nudgeConsumed = 0;
+      parkedLoop.notify({
+        message: { role: 'user', content: [{ type: 'text', text: 'nudge text' }], toolCalls: [] },
+        onConsume: () => {
+          nudgeConsumed += 1;
+        },
+      });
+      parked.mockNextResponse({ type: 'text', text: 'real answer' });
+      const parkedRef = attachParkedEngine(parkedLoop);
+      try {
+        await expect(real.result).resolves.toMatchObject({ type: 'completed' });
+        expect(nudgeConsumed).toBe(1);
+        expect(parked.llmCalls).toHaveLength(1);
+        expect(parked.contextData().history).toContainEqual(
+          expect.objectContaining({
+            content: [{ type: 'text', text: 'nudge text' }],
+          }),
+        );
+      } finally {
+        parkedRef.stop();
+      }
+    } finally {
+      await parked.dispose();
+    }
   });
 
   it('can abort an admission while quiescence holds it', async () => {
@@ -2018,6 +2069,44 @@ function submitTurn(loop: IAgentLoopService, text: string): { readonly turn: Tur
       origin: { kind: 'user' },
     },
   });
+}
+
+function parkedLifecycleStub(): IAgentLifecycleService {
+  return {
+    _serviceBrand: undefined,
+    onDidCreate: Event.None as Event<AgentContext>,
+    onDidCreateScope: Event.None as Event<AgentScopeCreatedEvent>,
+    onWillClose: Event.None as Event<AgentContext>,
+    onDidClose: Event.None as Event<AgentContext>,
+    create: () => Promise.reject(new Error('parked lifecycle stub')),
+    fork: () => Promise.reject(new Error('parked lifecycle stub')),
+    get: () => undefined,
+    list: () => [],
+    broadcastPermissionMode: () => {},
+    remove: () => Promise.resolve(),
+    handleOf: () => undefined,
+    adopt: (handle) => agentContextOf(handle),
+  };
+}
+
+function attachParkedEngine(loop: IAgentLoopService) {
+  const bundle = loop.buildAttachBundle();
+  const ref = createActor(createAgentMachine({}), {
+    input: {
+      request: bundle.request,
+      scopeFactory: () =>
+        Promise.resolve({
+          store: bundle.store,
+          turnLogic: bundle.turnLogic,
+          toolLogic: bundle.toolLogic,
+          tools: bundle.tools,
+          request: bundle.request,
+        }),
+    },
+  });
+  ref.start();
+  loop.attachEngine(ref, bundle);
+  return ref;
 }
 
 function createTimingRequester(): IAgentLLMRequesterService {

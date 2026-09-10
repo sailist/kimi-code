@@ -7,12 +7,14 @@ import type { LlmModel } from '#/llm/model';
 import type { LlmRequester } from '#/llm/requester/requester';
 import { createAgentMachine } from '#/agent/machine';
 import { inputSubmitted, messageAppended, turnEnded, turnStarted } from '#/agent/events';
-import { createTurnMachine, createUserEntry } from '#/agent/turn';
+import { createUserEntry } from '#/agent/turn';
 import type { AgentEventStore } from '#/agent/slices';
 import { SessionStores } from '#/session/stores';
+import type { AgentSwitched } from '#/session/events';
 import { MemoryBackend } from '#/store/backend/memory';
 import { TreeStore } from '#/store/store';
 import type { Tree } from '#/store/tree';
+import { testScopeFactory } from '#/test/agent/scope-factory';
 
 const model: LlmModel = { provider: 'test', model: 'test-model', capability: UNKNOWN_CAPABILITY };
 
@@ -52,13 +54,9 @@ async function reopen(env: TestEnv): Promise<TestEnv> {
 }
 
 function startAgent(store: AgentEventStore, requester: LlmRequester = createEchoRequester()): AgentActor {
-  const actor = createActor(
-    createAgentMachine({
-      tools: [],
-      turnActor: createTurnMachine(requester),
-    }),
-    { input: { request: { model }, store } },
-  );
+  const actor = createActor(createAgentMachine({}), {
+    input: { request: { model }, scopeFactory: testScopeFactory({ store, requester }) },
+  });
   actor.start();
   return actor;
 }
@@ -232,7 +230,7 @@ describe('SessionStores switchBranch', () => {
     const switched: { branch: string; reason?: string; stats?: Record<string, number> }[] = [];
     (await env.stores.session()).subscribe((_state, cause) => {
       if (cause.kind === 'event' && cause.event.type === 'agent.switched') {
-        const event = cause.event as { branch: string; reason?: string; stats?: Record<string, number> };
+        const event = cause.event as unknown as AgentSwitched;
         switched.push({ branch: event.branch, reason: event.reason, stats: event.stats });
       }
     });

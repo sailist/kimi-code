@@ -24,7 +24,9 @@ import { IAgentRuntimeService } from '#/agent/runtimeBinding/agentRuntime';
 import { ToolAccesses, type ExecutableTool } from '#/tool/toolContract';
 import { IAgentToolRegistryService } from '#/agent/toolRegistry/toolRegistry';
 import { IAgentLoopService } from '#/agent/loop/loop';
-import { IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
+import { agentContextOf, IAgentScopeContext } from '#/agent/scopeContext/scopeContext';
+import { createActor } from '#human/xstate2';
+import { createAgentMachine } from '#human/agent/machine';
 import { IAgentUserToolService, type UserToolRegistration } from '#/agent/userTool/userTool';
 import {
   AgentSwarmToolInputSchema,
@@ -100,7 +102,6 @@ import {
 } from '../harness';
 import { executeTool } from '../tools/fixtures/execute-tool';
 import { stubAgentContext } from '../agent/agentContext/stubs';
-import { agentContextOf } from '#/agent/scopeContext/scopeContext';
 import { TOWER_WORKER_PROFILE } from '#/features/tower/tower';
 
 const signal = new AbortController().signal;
@@ -425,6 +426,23 @@ function createAgentLifecycleStub(options: AgentLifecycleStubOptions = {}): Agen
     adopt: vi.fn((adopted) => {
       const adoptedHandle = adopted as IAgentScopeHandle;
       handles.set(adoptedHandle.id, adoptedHandle);
+      const loop = adoptedHandle.accessor.get(IAgentLoopService);
+      const bundle = loop.buildAttachBundle();
+      const ref = createActor(createAgentMachine({}), {
+        input: {
+          request: bundle.request,
+          scopeFactory: () =>
+            Promise.resolve({
+              store: bundle.store,
+              turnLogic: bundle.turnLogic,
+              toolLogic: bundle.toolLogic,
+              tools: bundle.tools,
+              request: bundle.request,
+            }),
+        },
+      });
+      ref.start();
+      loop.attachEngine(ref, bundle);
       return agentContextOf(adoptedHandle);
     }),
     broadcastPermissionMode: vi.fn(),

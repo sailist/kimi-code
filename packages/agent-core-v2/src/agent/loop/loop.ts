@@ -6,7 +6,13 @@ import type { FinishReason } from '#human/llm/finish-reason';
 import type { TokenUsage } from '#human/llm/usage';
 import type { Hooks } from '#/hooks';
 import { LoopErrors } from './errors';
-import type { MachineEngineRetrySnapshot, MachineEngineToolCallSnapshot } from './machine/engine';
+import type {
+  MachineEngine,
+  MachineEngineAttachBundle,
+  MachineEngineAttachRef,
+  MachineEngineRetrySnapshot,
+  MachineEngineToolCallSnapshot,
+} from './machine/engine';
 
 export interface AgentActivityTurnSnapshot {
   readonly turnId: number;
@@ -156,7 +162,11 @@ export interface IAgentLoopService {
 
   tryAcquireQuiescence(): IDisposable | undefined;
 
-  resetMachineEngine(): void;
+  buildAttachBundle(): MachineEngineAttachBundle;
+
+  attachEngine(ref: MachineEngineAttachRef, bundle: MachineEngineAttachBundle): MachineEngine;
+
+  resetMachineEngine(): Promise<void>;
 
   settled(): Promise<void>;
 

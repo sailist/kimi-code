@@ -1,6 +1,8 @@
 import { toDisposable } from '#/_base/di/lifecycle';
 import { Event } from '#/_base/event';
 import type { IAgentLoopService, LoopErrorHandler, LoopErrorHandlerRegistrationOptions, LoopNotify, LoopNotifyHandle, LoopPromptSubmit, Turn, TurnResult } from '#/agent/loop/loop';
+import type { MachineEngine, MachineEngineAttachBundle } from '#/agent/loop/machine/engine';
+import type { AgentEventStore } from '#human/agent/slices';
 import type { IAgentToolExecutorService } from '#/agent/toolExecutor/toolExecutor';
 import type { BeforeToolExecuteEvent, ToolDidExecuteContext, WillExecuteToolEvent } from '#/agent/toolExecutor/toolHooks';
 import { OrderedHookSlot } from '#/hooks';
@@ -37,6 +39,39 @@ function registry(): { handlers: LoopErrorHandler[]; register: IAgentLoopService
     return toDisposable(() => remove(handler.id));
   };
   return { handlers, register };
+}
+function stubAttachStore(): AgentEventStore {
+  return {
+    ref: { tree: 'test', branch: 'main' },
+    getState: () => ({ history: [], queue: [], notifications: [], reminders: [], turnIndex: { nextTurnId: 0 } }),
+    subscribe: () => () => {},
+    dispatch: () => Promise.resolve({ kind: 'entry', seq: 0, ts: 0, type: 'noop', payload: null }),
+    registerSlice: () => Promise.resolve(() => {}),
+    reset: () => Promise.resolve(),
+    flush: () => Promise.resolve(),
+    close: () => Promise.resolve(),
+  } as unknown as AgentEventStore;
+}
+function stubAttachBundle(): MachineEngineAttachBundle {
+  return { store: stubAttachStore(), request: { model: { provider: 'test', model: 'test' } } } as unknown as MachineEngineAttachBundle;
+}
+function stubAttachEngine(): MachineEngine {
+  return {
+    submit: () => {},
+    steer: () => {},
+    notify: () => {},
+    remind: () => {},
+    cancelQueueItem: () => {},
+    abort: () => {},
+    resetHistory: () => Promise.resolve(),
+    resetJournal: () => Promise.resolve(),
+    stop: () => {},
+    snapshot: () => ({ running: false, aborting: false, waitingForBackground: false, queueLength: 0, queueIds: [], notificationCount: 0, reminderCount: 0, backgroundCount: 0 }),
+    currentStep: () => 0,
+    lastFinish: () => undefined,
+    toolExtras: new Map(),
+    handleToolProgress: () => {},
+  };
 }
 export function stubLoopWithHooks(options: StubLoopOptions = {}): StubLoop {
   const hooks = createHooks(['onWillBeginStep', 'onDidFinishStep']) as IAgentLoopService['hooks'];
@@ -92,7 +127,9 @@ export function stubLoopWithHooks(options: StubLoopOptions = {}): StubLoop {
     cancelQueued() { return false; },
     cancelFromUser(turnId) { stub.cancel(turnId); },
     tryAcquireQuiescence: () => toDisposable(() => {}),
-    resetMachineEngine: () => {},
+    buildAttachBundle: () => stubAttachBundle(),
+    attachEngine: () => stubAttachEngine(),
+    resetMachineEngine: () => Promise.resolve(),
     hasPendingRequests: hasPending,
     registerLoopErrorHandler: errorHandlers.register,
     settled: () => Promise.resolve(),

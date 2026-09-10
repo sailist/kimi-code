@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createAgentMachine, type AgentMachineContext } from '#/agent/machine';
 import { messageAppended } from '#/agent/events';
 import type { AgentEventStore } from '#/agent/slices';
-import { createTurnMachine, createUserEntry, type TurnBeforeStep } from '#/agent/turn';
+import { createUserEntry, type TurnBeforeStep } from '#/agent/turn';
 import { createCompactionController, type CompactionEvent } from '#/compaction/controller';
 import type { Summarize, SummaryOutcome } from '#/compaction/summarize';
 import { UNKNOWN_CAPABILITY } from '#/llm/capability';
@@ -14,6 +14,7 @@ import { SessionStores } from '#/session/stores';
 import { MemoryBackend } from '#/store/backend/memory';
 import { TreeStore } from '#/store/store';
 import type { Tree } from '#/store/tree';
+import { testScopeFactory } from '#/test/agent/scope-factory';
 import { createActor, waitFor, type ActorRefFrom } from '#/xstate2';
 
 const model: LlmModel = { provider: 'test', model: 'test-model', capability: UNKNOWN_CAPABILITY };
@@ -43,15 +44,16 @@ function startAgent(
   beforeStep?: BeforeStepHook,
   request?: Partial<LlmRequestConfig>,
 ): AgentActor {
-  const actor = createActor(
-    createAgentMachine({
-      tools: [],
-      turnActor: createTurnMachine(requester, {
-        onBeforeStep: (context) => beforeStep?.current?.(context),
+  const actor = createActor(createAgentMachine({}), {
+    input: {
+      request: { model, ...request },
+      scopeFactory: testScopeFactory({
+        store,
+        requester,
+        turnOptions: { onBeforeStep: (context) => beforeStep?.current?.(context) },
       }),
-    }),
-    { input: { request: { model, ...request }, store } },
-  );
+    },
+  });
   actor.start();
   return actor;
 }

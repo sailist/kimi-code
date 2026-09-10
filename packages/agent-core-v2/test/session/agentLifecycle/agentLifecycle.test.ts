@@ -91,6 +91,11 @@ import { ISessionMetadata } from '#/session/sessionMetadata/sessionMetadata';
 import { createWireMetadataRecord, type WireRecord } from '#/wire/record';
 import { IAgentToolExecutorService } from '#/agent/toolExecutor/toolExecutor';
 import { IAgentLoopService } from '#/agent/loop/loop';
+import type {
+  MachineEngine,
+  MachineEngineAttachBundle,
+} from '#/agent/loop/machine/engine';
+import type { AgentEventStore } from '#human/agent/slices';
 import { IAgentPromptService } from '#/agent/prompt/prompt';
 import { IAgentFullCompactionService } from '#/agent/fullCompaction/fullCompaction';
 import { ITelemetryService } from '#/app/telemetry/telemetry';
@@ -146,6 +151,60 @@ const pluginServiceStub = {
   enabledMcpServers: async () => ({}),
   enabledHooks: async () => [],
 } as unknown as IPluginService;
+
+function stubAttachStore(): AgentEventStore {
+  return {
+    ref: { tree: 'test', branch: 'main' },
+    getState: () => ({
+      history: [],
+      queue: [],
+      notifications: [],
+      reminders: [],
+      turnIndex: { nextTurnId: 0 },
+    }),
+    subscribe: () => () => {},
+    dispatch: () => Promise.resolve({ kind: 'entry', seq: 0, ts: 0, type: 'noop', payload: null }),
+    registerSlice: () => Promise.resolve(() => {}),
+    reset: () => Promise.resolve(),
+    flush: () => Promise.resolve(),
+    close: () => Promise.resolve(),
+  } as unknown as AgentEventStore;
+}
+
+function stubAttachEngine(): MachineEngine {
+  return {
+    submit: () => {},
+    steer: () => {},
+    notify: () => {},
+    remind: () => {},
+    cancelQueueItem: () => {},
+    abort: () => {},
+    resetHistory: () => Promise.resolve(),
+    resetJournal: () => Promise.resolve(),
+    stop: () => {},
+    snapshot: () => ({
+      running: false,
+      aborting: false,
+      waitingForBackground: false,
+      queueLength: 0,
+      queueIds: [],
+      notificationCount: 0,
+      reminderCount: 0,
+      backgroundCount: 0,
+    }),
+    currentStep: () => 0,
+    lastFinish: () => undefined,
+    toolExtras: new Map(),
+    handleToolProgress: () => {},
+  };
+}
+
+function stubAttachBundle(): MachineEngineAttachBundle {
+  return {
+    store: stubAttachStore(),
+    request: { model: { provider: 'test', model: 'test' } },
+  } as unknown as MachineEngineAttachBundle;
+}
 
 function recordingAppendLog(initial: readonly WireRecord[] = []): {
   readonly appended: WireRecord[];
@@ -369,6 +428,8 @@ describe('AgentLifecycleService', () => {
       cancelQueued: loopCancelQueued,
       settled: loopSettled,
       tryAcquireQuiescence: vi.fn(() => ({ dispose: vi.fn() })),
+      buildAttachBundle: () => stubAttachBundle(),
+      attachEngine: () => stubAttachEngine(),
     } as unknown as IAgentLoopService);
     promptDrain = vi.fn<IAgentPromptService['drain']>(async () => {});
     ix.stub(IAgentPromptService, {
