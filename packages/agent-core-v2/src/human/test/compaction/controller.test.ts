@@ -217,7 +217,7 @@ describe('compaction controller manual', () => {
     await waitFor(actor, (s) => s.matches('running'), { timeout: 5000 });
     actor.send({ type: 'input.submit', message: createUserMessage('q1') });
     actor.send({ type: 'input.submit', message: createUserMessage('q2') });
-    await vi.waitFor(() => expect(main.getState().queue).toHaveLength(2), { timeout: 5000 });
+    await vi.waitFor(() => expect(actor.getSnapshot().context.queue).toHaveLength(2), { timeout: 5000 });
     const harness = startController(env, actor);
 
     const compactPromise = harness.controller.compact();
@@ -244,9 +244,34 @@ describe('compaction controller manual', () => {
   it('merges inputs submitted and steered during summarization into the new branch', async () => {
     const env = await testEnv();
     const main = await env.stores.open('main');
-    const actor = startAgent(main, createEchoRequester());
+    let release: (() => void) | undefined;
+    let first = true;
+    const requester: LlmRequester = {
+      generate: (_config, { messages }, { onEvent }) => {
+        const last = messages.at(-1);
+        const text = last !== undefined && last.role === 'user' ? extractText(last) : '';
+        const respond = (): void => {
+          onEvent?.({ type: 'llm.streaming.part', part: { type: 'text', text: `echo:${text}` } });
+          onEvent?.({ type: 'llm.done' });
+        };
+        if (!first) {
+          respond();
+          return Promise.resolve();
+        }
+        first = false;
+        return new Promise<void>((resolve) => {
+          release = () => {
+            respond();
+            resolve();
+          };
+        });
+      },
+    };
+    const actor = startAgent(main, requester);
     actor.send({ type: 'input.submit', message: createUserMessage('first') });
-    await waitFor(actor, (s) => s.matches('idle') && main.getState().history.length === 2, {
+    await waitFor(actor, (s) => s.matches('running'), { timeout: 5000 });
+    actor.send({ type: 'input.submit', id: 'e1', message: createUserMessage('early') });
+    await vi.waitFor(() => expect(actor.getSnapshot().context.queue).toHaveLength(1), {
       timeout: 5000,
     });
     let resolveSummary: ((outcome: SummaryOutcome) => void) | undefined;
@@ -260,13 +285,18 @@ describe('compaction controller manual', () => {
     const harness = startController(env, actor, { summarize });
 
     const compactPromise = harness.controller.compact();
+    await vi.waitFor(() => expect(actor.getSnapshot().context.paused).toBe(true), { timeout: 5000 });
+    (release as () => void)();
     await vi.waitFor(() => expect(summaryCalled).toBe(true), { timeout: 5000 });
     expect(harness.controller.status().phase).toBe('summarizing');
     actor.send({ type: 'input.submit', id: 's1', message: createUserMessage('late') });
     actor.send({ type: 'input.submit', message: createUserMessage('queued') });
-    await vi.waitFor(() => expect(main.getState().queue).toHaveLength(2), { timeout: 5000 });
+    await vi.waitFor(() => expect(actor.getSnapshot().context.queue).toHaveLength(3), { timeout: 5000 });
+    actor.send({ type: 'input.steer', id: 'e1' });
     actor.send({ type: 'input.steer', id: 's1' });
-    await vi.waitFor(() => expect(main.getState().notifications).toHaveLength(1), { timeout: 5000 });
+    await vi.waitFor(() => expect(actor.getSnapshot().context.notifications).toHaveLength(2), {
+      timeout: 5000,
+    });
     (resolveSummary as (outcome: SummaryOutcome) => void)({
       text: 'MERGED SUMMARY',
       attempts: 1,
@@ -275,13 +305,14 @@ describe('compaction controller manual', () => {
 
     const result = await compactPromise;
     expect(result.branchId).toBe('main~2');
-    await waitFor(actor, (s) => s.matches('idle') && main.getState().history.length === 5, {
+    await waitFor(actor, (s) => s.matches('idle') && main.getState().history.length === 6, {
       timeout: 5000,
     });
 
     expect(historyTexts(main)).toEqual([
       'first',
       expect.stringContaining('MERGED SUMMARY'),
+      'early',
       'late',
       'queued',
       'echo:queued',
@@ -289,6 +320,7 @@ describe('compaction controller manual', () => {
     expect(main.getState().turnIndex.nextTurnId).toBe(3);
     expect(harness.events.map((event) => event.type)).toEqual([
       'compaction.started',
+      'compaction.blocked',
       'compaction.completed',
     ]);
 
@@ -384,7 +416,7 @@ describe('compaction controller manual', () => {
     expect(cancelled?.type === 'compaction.cancelled' && cancelled.cause === 'user-abort').toBe(true);
 
     actor.send({ type: 'input.submit', message: createUserMessage('later') });
-    await vi.waitFor(() => expect(main.getState().queue).toHaveLength(1), { timeout: 5000 });
+    await vi.waitFor(() => expect(actor.getSnapshot().context.queue).toHaveLength(1), { timeout: 5000 });
     expect(actor.getSnapshot().matches('idle')).toBe(true);
     expect(actor.getSnapshot().context.paused).toBe(true);
     expect(historyTexts(main)).toEqual(['first']);

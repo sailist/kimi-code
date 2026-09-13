@@ -646,8 +646,8 @@ describe('agent machine lifecycle', () => {
     });
     actor.send({ type: 'input.submit', message: createUserMessage('mid-turn') });
     await vi.waitFor(() => {
-      expect(store.getState().queue).toHaveLength(1);
-      expect(store.getState().notifications).toHaveLength(0);
+      expect(actor.getSnapshot().context.queue).toHaveLength(1);
+      expect(actor.getSnapshot().context.notifications).toHaveLength(0);
     });
 
     resolveTool?.({ content: [{ type: 'text', text: 'slow' }] });
@@ -769,7 +769,7 @@ describe('agent machine input.notify', () => {
       message: createUserMessage('<system-reminder>stale</system-reminder>'),
     });
     await vi.waitFor(() => {
-      expect(store.getState().notifications).toHaveLength(1);
+      expect(actor.getSnapshot().context.notifications).toHaveLength(1);
     });
 
     resolveTool?.({ content: [{ type: 'text', text: 'slow' }] });
@@ -823,7 +823,7 @@ describe('agent machine input.notify', () => {
       message: createUserMessage('<system-reminder>stale</system-reminder>'),
     });
     await vi.waitFor(() => {
-      expect(store.getState().notifications).toHaveLength(1);
+      expect(actor.getSnapshot().context.notifications).toHaveLength(1);
     });
 
     streamMessage(createAssistantMessage([{ type: 'text', text: 'first' }]), firstOnEvent);
@@ -915,19 +915,19 @@ describe('agent machine input.remind', () => {
       message: createUserMessage('<system-reminder>\nstale\n</system-reminder>'),
     });
     await vi.waitFor(() => {
-      expect(store.getState().reminders).toHaveLength(1);
+      expect(actor.getSnapshot().context.reminders).toHaveLength(1);
     });
     expect(actor.getSnapshot().matches('idle')).toBe(true);
     expect(store.getState().history).toHaveLength(0);
-    expect(store.getState().reminders).toHaveLength(1);
-    expect(store.getState().reminders[0]?.meta).toEqual({ source: 'reminder', key: 'todo' });
-    expect(extractText(store.getState().reminders[0]?.message ?? createUserMessage(''))).toContain('stale');
+    expect(actor.getSnapshot().context.reminders).toHaveLength(1);
+    expect(actor.getSnapshot().context.reminders[0]?.meta).toEqual({ source: 'reminder', key: 'todo' });
+    expect(extractText(actor.getSnapshot().context.reminders[0]?.message ?? createUserMessage(''))).toContain('stale');
 
     actor.send({ type: 'input.submit', message: createUserMessage('hi') });
     await vi.waitFor(() => {
       expect(resolveTool).toBeDefined();
     });
-    expect(store.getState().reminders).toHaveLength(1);
+    expect(actor.getSnapshot().context.reminders).toHaveLength(1);
 
     resolveTool?.({ content: [{ type: 'text', text: 'slow' }] });
     await waitFor(
@@ -944,7 +944,7 @@ describe('agent machine input.remind', () => {
       'assistant:done',
     ]);
     expect(store.getState().history[3]?.meta).toEqual({ source: 'reminder', key: 'todo' });
-    expect(store.getState().reminders).toHaveLength(0);
+    expect(actor.getSnapshot().context.reminders).toHaveLength(0);
     expect(consumedKeys).toEqual([['todo']]);
   });
 });
@@ -1048,19 +1048,19 @@ describe('agent machine input.steer', () => {
     });
     actor.send({ type: 'input.submit', id: 'p1', message: createUserMessage('steer me') });
     await vi.waitFor(() => {
-      expect(store.getState().queue).toHaveLength(1);
+      expect(actor.getSnapshot().context.queue).toHaveLength(1);
     });
 
     actor.send({ type: 'input.steer', id: 'nope' });
     await vi.waitFor(() => {
-      expect(store.getState().queue).toHaveLength(1);
-      expect(store.getState().notifications).toHaveLength(0);
+      expect(actor.getSnapshot().context.queue).toHaveLength(1);
+      expect(actor.getSnapshot().context.notifications).toHaveLength(0);
     });
 
     actor.send({ type: 'input.steer', id: 'p1' });
     await vi.waitFor(() => {
-      expect(store.getState().queue).toHaveLength(0);
-      expect(store.getState().notifications).toHaveLength(1);
+      expect(actor.getSnapshot().context.queue).toHaveLength(0);
+      expect(actor.getSnapshot().context.notifications).toHaveLength(1);
     });
 
     resolveTool?.({ content: [{ type: 'text', text: 'slow' }] });
@@ -1409,7 +1409,7 @@ describe('agent machine input.pause/input.continue', () => {
     actor.send({ type: 'input.submit', message: createUserMessage('hi') });
 
     await vi.waitFor(() => {
-      expect(store.getState().queue).toHaveLength(1);
+      expect(actor.getSnapshot().context.queue).toHaveLength(1);
     });
     expect(actor.getSnapshot().matches('running')).toBe(false);
 

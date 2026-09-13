@@ -7,9 +7,9 @@ import {
   inputSubmitted,
 } from '#/agent/events';
 import type { QueuedPrompt } from '#/agent/slices';
-import type { HistoryMessage } from '#/agent/turn';
+import type { HistoryMessage, UserEntry } from '#/agent/turn';
 import type { ExternalEvent } from '#/eventStore/events';
-import type { SystemMessage, UserMessage } from '#/llm/message';
+import type { UserMessage } from '#/llm/message';
 import type { AgentActorRef } from '#/session/machine';
 import type { SessionStores } from '#/session/stores';
 import { assign, emit, enqueueActions, fromPromise, setup, waitFor } from '#/xstate2';
@@ -87,9 +87,14 @@ export type CompactionMachineOutput =
 
 type CompactionMachineEvent = { type: 'cancel'; cause: 'cancelled' | 'user-abort' };
 
-interface QuiesceSnapshot {
-  history: HistoryMessage[];
+interface PendingSnapshot {
   queue: QueuedPrompt[];
+  notifications: UserEntry[];
+  reminders: HistoryMessage[];
+}
+
+interface QuiesceSnapshot extends PendingSnapshot {
+  history: HistoryMessage[];
   nextTurnId: number;
   branch: string;
   head: number | null;
@@ -113,6 +118,7 @@ interface CompactionMachineContext {
   stats?: CompactionStats;
   summaryTelemetry?: SummaryTelemetry;
   branchId?: string;
+  pending?: PendingSnapshot;
 }
 
 const PAUSE_TIMEOUT_MS = 300_000;
@@ -166,32 +172,34 @@ async function assertInputOnlyDelta(
   });
 }
 
-async function replayInputDelta(
+function replayPendingDelta(
   deps: CompactionMachineDeps,
-  snapBranch: string,
-  snapHead: number | null,
-): Promise<void> {
-  await forEachDeltaEntry(deps.stores, snapBranch, snapHead, (type, data) => {
-    if (type === inputSubmitted.type) {
-      deps.actor.send({
-        type: 'input.submit',
-        id: data['id'] as string | undefined,
-        message: data['message'] as UserMessage,
-      });
-    } else if (type === inputNotified.type) {
-      deps.actor.send({ type: 'input.notify', message: data['message'] as UserMessage });
-    } else if (type === inputReminded.type) {
-      deps.actor.send({
-        type: 'input.remind',
-        key: data['key'] as string,
-        message: data['message'] as UserMessage | SystemMessage,
-      });
-    } else if (type === inputSteered.type) {
-      deps.actor.send({ type: 'input.steer', id: data['id'] as string });
-    } else if (type === inputCancelled.type) {
-      deps.actor.send({ type: 'input.cancel', id: data['id'] as string });
+  snap: PendingSnapshot,
+  pending: PendingSnapshot,
+): void {
+  const snapQueue = new Set(snap.queue);
+  for (const item of pending.queue) {
+    if (!snapQueue.has(item)) {
+      deps.actor.send({ type: 'input.submit', id: item.id, message: item.message });
     }
-  });
+  }
+  const snapNotifications = new Set(snap.notifications);
+  for (const entry of pending.notifications) {
+    if (!snapNotifications.has(entry)) {
+      deps.actor.send({ type: 'input.notify', message: entry.message });
+    }
+  }
+  const snapReminders = new Set(snap.reminders);
+  for (const entry of pending.reminders) {
+    if (snapReminders.has(entry) || entry.meta.key === undefined) continue;
+    if (entry.message.role !== 'system' && entry.message.role !== 'user') continue;
+    deps.actor.send({ type: 'input.remind', key: entry.meta.key, message: entry.message });
+  }
+  for (const item of snap.queue) {
+    if (!pending.queue.includes(item) && item.id !== undefined) {
+      deps.actor.send({ type: 'input.cancel', id: item.id });
+    }
+  }
 }
 
 function waitForResetApplied(deps: CompactionMachineDeps, branchId: string): Promise<void> {
@@ -236,9 +244,12 @@ export function createCompactionMachine(deps: CompactionMachineDeps) {
         if (state.history.length === 0) {
           throw new CompactError('insufficient', 'nothing to compact');
         }
+        const pending = deps.actor.getSnapshot().context;
         return {
           history: state.history,
-          queue: state.queue,
+          queue: [...pending.queue],
+          notifications: [...pending.notifications],
+          reminders: [...pending.reminders],
           nextTurnId: state.turnIndex.nextTurnId,
           branch: store.ref.branch,
           head: deps.stores.tree.openBranch(store.ref.branch).head,
@@ -292,24 +303,31 @@ export function createCompactionMachine(deps: CompactionMachineDeps) {
           },
         };
       }),
-      switchStore: fromPromise<{ branchId: string }, { seedEvents: ExternalEvent[]; stats: CompactionStats }>(
+      switchStore: fromPromise<
+        { branchId: string; pending: PendingSnapshot },
+        { seedEvents: ExternalEvent[]; stats: CompactionStats }
+      >(async ({ input }) => {
+        const machineContext = deps.actor.getSnapshot().context;
+        const pending: PendingSnapshot = {
+          queue: [...machineContext.queue],
+          notifications: [...machineContext.notifications],
+          reminders: [...machineContext.reminders],
+        };
+        const { branchId } = await deps.stores.switchBranch(deps.agentId, {
+          reason: 'compaction',
+          stats: {
+            compactedCount: input.stats.compactedCount,
+            tokensBefore: input.stats.tokensBefore,
+            tokensAfter: input.stats.tokensAfter,
+          },
+          seed: input.seedEvents,
+        });
+        await waitForResetApplied(deps, branchId);
+        return { branchId, pending };
+      }),
+      resume: fromPromise<void, { snap: QuiesceSnapshot; pending: PendingSnapshot; reason: CompactionReason }>(
         async ({ input }) => {
-          const { branchId } = await deps.stores.switchBranch(deps.agentId, {
-            reason: 'compaction',
-            stats: {
-              compactedCount: input.stats.compactedCount,
-              tokensBefore: input.stats.tokensBefore,
-              tokensAfter: input.stats.tokensAfter,
-            },
-            seed: input.seedEvents,
-          });
-          await waitForResetApplied(deps, branchId);
-          return { branchId };
-        },
-      ),
-      resume: fromPromise<void, { branch: string; head: number | null; reason: CompactionReason }>(
-        async ({ input }) => {
-          await replayInputDelta(deps, input.branch, input.head);
+          replayPendingDelta(deps, input.snap, input.pending);
           const continuation = (deps.continuation ?? defaultContinuation)(input.reason);
           if (continuation !== undefined) {
             deps.actor.send({ type: 'input.submit', message: continuation });
@@ -420,7 +438,10 @@ export function createCompactionMachine(deps: CompactionMachineDeps) {
           }),
           onDone: {
             target: 'resuming',
-            actions: assign({ branchId: ({ event }) => event.output.branchId }),
+            actions: assign({
+              branchId: ({ event }) => event.output.branchId,
+              pending: ({ event }) => event.output.pending,
+            }),
           },
           onError: {
             target: 'cancelled',
@@ -432,8 +453,8 @@ export function createCompactionMachine(deps: CompactionMachineDeps) {
         invoke: {
           src: 'resume',
           input: ({ context }) => ({
-            branch: (context.snap as QuiesceSnapshot).branch,
-            head: (context.snap as QuiesceSnapshot).head,
+            snap: context.snap as QuiesceSnapshot,
+            pending: context.pending as PendingSnapshot,
             reason: context.input.reason,
           }),
           onDone: { target: 'completed' },

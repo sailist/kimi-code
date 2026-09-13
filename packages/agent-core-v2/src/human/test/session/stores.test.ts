@@ -147,12 +147,12 @@ describe('SessionStores undo', () => {
     expect(header.parentBranch).toBe('main');
     expect(header.parentSeq).toBe((cutStart as { seq: number }).seq - 1);
     expect((await env.stores.session()).getState().roster.agents['main']).toBe('main~2');
-    expect(env.tree.openBranch('main').head).toBe(11);
+    expect(env.tree.openBranch('main').head).toBe(7);
 
     await waitFor(actor, (s) => s.matches('idle'), { timeout: 5000 });
     await runTurn(actor, main, 'third', 5);
     expect(historyTexts(main)).toEqual(['first', 'echo:first', 'second', 'third', 'echo:third']);
-    expect(env.tree.openBranch('main').head).toBe(11);
+    expect(env.tree.openBranch('main').head).toBe(7);
     expect(main.getState().turnIndex.nextTurnId).toBe(2);
 
     actor.stop();

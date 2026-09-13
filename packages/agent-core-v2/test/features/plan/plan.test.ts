@@ -719,12 +719,10 @@ describe('Plan service', () => {
         [emit] context.spliced                { "time": "<time>", "agentId": "main", "start": 0, "deleteCount": 0, "messages": [ { "role": "user", "content": [ { "type": "text", "text": "Inspect without mutating files" } ], "toolCalls": [], "origin": { "kind": "user" }, "id": "<msg-1>" } ] }
         [emit] prompt.started                 { "time": "<time>", "agentId": "main", "promptId": "<msg-1>" }
         [wire] context.append_message         { "agentId": "main", "message": { "role": "user", "content": [ { "type": "text", "text": "Inspect without mutating files" } ], "toolCalls": [], "origin": { "kind": "user" }, "id": "<msg-1>" }, "time": "<time>" }
-        [wire] human.agent.input.submitted    { "id": "<msg-1>", "message": { "role": "user", "content": [ { "type": "text", "text": "Inspect without mutating files" } ] }, "time": "<time>", "kind": "event" }
         [wire] human.agent.message.appended   { "message": { "message": { "role": "user", "content": [ { "type": "text", "text": "Inspect without mutating files" } ] }, "meta": { "source": "input" } }, "time": "<time>", "kind": "event" }
-        [wire] human.agent.queue.drained      { "id": "<msg-1>", "time": "<time>", "kind": "event" }
         [wire] human.agent.turn.started       { "turnId": 0, "queueItemId": "<msg-1>", "time": "<time>", "kind": "event" }
-        [emit] context.spliced                { "time": "<time>", "agentId": "main", "start": 1, "deleteCount": 0, "messages": [ { "role": "user", "content": [ { "type": "text", "text": "<plan-mode-reminder>" } ], "toolCalls": [], "origin": { "kind": "injection", "variant": "plan_mode" } } ] }
         [wire] plugin.session_start           { "agentId": "main", "content": null, "time": "<time>" }
+        [emit] context.spliced                { "time": "<time>", "agentId": "main", "start": 1, "deleteCount": 0, "messages": [ { "role": "user", "content": [ { "type": "text", "text": "<plan-mode-reminder>" } ], "toolCalls": [], "origin": { "kind": "injection", "variant": "plan_mode" } } ] }
         [wire] context.append_message         { "agentId": "main", "message": { "role": "user", "content": [ { "type": "text", "text": "<plan-mode-reminder>" } ], "toolCalls": [], "origin": { "kind": "injection", "variant": "plan_mode" } }, "time": "<time>" }
         [emit] turn.step.started              { "time": "<time>", "agentId": "main", "turnId": 0, "step": 1, "stepId": "<uuid-1>" }
         [wire] context.append_loop_event      { "agentId": "main", "event": { "type": "step.begin", "uuid": "<uuid-1>", "turnId": "0", "step": 1 }, "time": "<time>" }
@@ -801,12 +799,10 @@ describe('Plan service', () => {
         [emit] context.spliced                { "time": "<time>", "agentId": "main", "start": 0, "deleteCount": 0, "messages": [ { "role": "user", "content": [ { "type": "text", "text": "Remove forbidden.txt" } ], "toolCalls": [], "origin": { "kind": "user" }, "id": "<msg-1>" } ] }
         [emit] prompt.started                 { "time": "<time>", "agentId": "main", "promptId": "<msg-1>" }
         [wire] context.append_message         { "agentId": "main", "message": { "role": "user", "content": [ { "type": "text", "text": "Remove forbidden.txt" } ], "toolCalls": [], "origin": { "kind": "user" }, "id": "<msg-1>" }, "time": "<time>" }
-        [wire] human.agent.input.submitted    { "id": "<msg-1>", "message": { "role": "user", "content": [ { "type": "text", "text": "Remove forbidden.txt" } ] }, "time": "<time>", "kind": "event" }
         [wire] human.agent.message.appended   { "message": { "message": { "role": "user", "content": [ { "type": "text", "text": "Remove forbidden.txt" } ] }, "meta": { "source": "input" } }, "time": "<time>", "kind": "event" }
-        [wire] human.agent.queue.drained      { "id": "<msg-1>", "time": "<time>", "kind": "event" }
         [wire] human.agent.turn.started       { "turnId": 0, "queueItemId": "<msg-1>", "time": "<time>", "kind": "event" }
-        [emit] context.spliced                { "time": "<time>", "agentId": "main", "start": 1, "deleteCount": 0, "messages": [ { "role": "user", "content": [ { "type": "text", "text": "<plan-mode-reminder>" } ], "toolCalls": [], "origin": { "kind": "injection", "variant": "plan_mode" } } ] }
         [wire] plugin.session_start           { "agentId": "main", "content": null, "time": "<time>" }
+        [emit] context.spliced                { "time": "<time>", "agentId": "main", "start": 1, "deleteCount": 0, "messages": [ { "role": "user", "content": [ { "type": "text", "text": "<plan-mode-reminder>" } ], "toolCalls": [], "origin": { "kind": "injection", "variant": "plan_mode" } } ] }
         [wire] context.append_message         { "agentId": "main", "message": { "role": "user", "content": [ { "type": "text", "text": "<plan-mode-reminder>" } ], "toolCalls": [], "origin": { "kind": "injection", "variant": "plan_mode" } }, "time": "<time>" }
         [emit] turn.step.started              { "time": "<time>", "agentId": "main", "turnId": 0, "step": 1, "stepId": "<uuid-1>" }
         [wire] context.append_loop_event      { "agentId": "main", "event": { "type": "step.begin", "uuid": "<uuid-1>", "turnId": "0", "step": 1 }, "time": "<time>" }
